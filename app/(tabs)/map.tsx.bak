@@ -1,0 +1,524 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator, Platform, Pressable, StyleSheet, Text, View,
+} from 'react-native';
+import { WebView } from 'react-native-webview';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  useAnimatedStyle, useSharedValue, withSpring, withTiming,
+} from 'react-native-reanimated';
+import GlassSurface from '@/src/components/glass/GlassSurface';
+import PressableScale from '@/src/components/glass/PressableScale';
+import { tanksApi, devicesApi, TankRecord, DeviceRecord } from '@/src/lib/api';
+import { colors, radius, spacing, tankTypeMeta, typography } from '@/src/theme/tokens';
+
+const LOCATION_COORDS: Record<string, [number, number]> = {
+  'Chennai, Tamil Nadu':    [13.0827, 80.2707],
+  'Pondicherry, India':     [11.9416, 79.8083],
+  'Coimbatore, Tamil Nadu': [11.0168, 76.9558],
+  'Thanjavur, Tamil Nadu':  [10.7905, 79.1378],
+  'Bangalore, Karnataka':   [12.9698, 77.7499],
+  'Pune, Maharashtra':      [18.5204, 73.8567],
+  'Hyderabad, Telangana':   [17.3850, 78.4867],
+  'Mumbai, Maharashtra':    [19.0760, 72.8777],
+  'Delhi, India':           [28.7041, 77.1025],
+  'Kolkata, West Bengal':   [22.5726, 88.3639],
+};
+
+const PIN_STYLE: Record<string, { c1: string; c2: string; emoji: string }> = {
+  drinking:    { c1: '#00D4FF', c2: '#0055CC', emoji: '💧' },
+  aquaculture: { c1: '#00E5CC', c2: '#007A66', emoji: '🐟' },
+  industrial:  { c1: '#FF6B35', c2: '#CC2200', emoji: '⚙️' },
+  irrigation:  { c1: '#7EE8A2', c2: '#2E7D32', emoji: '🌿' },
+};
+
+type TankPin = TankRecord & { lat: number; lng: number; device?: DeviceRecord };
+
+// ── Canvas map HTML (no external JS library — pure browser APIs) ──────────────
+function buildMapHTML(pins: TankPin[]): string {
+  const pinsJson = JSON.stringify(
+    pins.map(p => ({
+      id: p._id,
+      lat: p.lat,
+      lng: p.lng,
+      type: p.tankType,
+      ...(PIN_STYLE[p.tankType] ?? PIN_STYLE.drinking),
+    }))
+  );
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#010B1E;overflow:hidden;touch-action:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const PINS = ${pinsJson};
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const DPR = window.devicePixelRatio || 1;
+canvas.width = window.innerWidth * DPR;
+canvas.height = window.innerHeight * DPR;
+canvas.style.width = window.innerWidth + 'px';
+canvas.style.height = window.innerHeight + 'px';
+ctx.scale(DPR, DPR);
+
+const W = window.innerWidth;
+const H = window.innerHeight;
+
+// Map state
+let zoom = 6;
+const TILE = 256;
+
+// Mercator projection helpers
+function ll2world(lat, lng) {
+  const n = Math.pow(2, zoom) * TILE;
+  const x = (lng + 180) / 360 * n;
+  const latR = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(latR) + 1/Math.cos(latR)) / Math.PI) / 2 * n;
+  return {x, y};
+}
+
+// Initial center on South India
+const CENTER = ll2world(14.5, 78.0);
+let offX = W/2 - CENTER.x;
+let offY = H/2 - CENTER.y;
+
+// Tile cache
+const cache = {};
+
+function tileUrl(z, tx, ty) {
+  const s = ['a','b','c','d'][Math.abs(tx+ty) % 4];
+  return 'https://' + s + '.basemaps.cartocdn.com/dark_all/' + z + '/' + tx + '/' + ty + '.png';
+}
+
+function loadTile(tx, ty) {
+  const n = Math.pow(2, zoom);
+  const wtx = ((tx % n) + n) % n;
+  const wty = ((ty % n) + n) % n;
+  if (wty < 0 || wty >= n) return;
+  const key = zoom + '/' + wtx + '/' + wty;
+  if (key in cache) return;
+  cache[key] = null; // mark as loading
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => { cache[key] = img; draw(); };
+  img.onerror = () => { cache[key] = 'err'; };
+  img.src = tileUrl(zoom, wtx, wty);
+}
+
+function draw() {
+  ctx.fillStyle = '#010B1E';
+  ctx.fillRect(0, 0, W, H);
+
+  const n = Math.pow(2, zoom);
+  const x0 = Math.floor(-offX / TILE) - 1;
+  const y0 = Math.floor(-offY / TILE) - 1;
+  const x1 = Math.floor((W - offX) / TILE) + 1;
+  const y1 = Math.floor((H - offY) / TILE) + 1;
+
+  for (let tx = x0; tx <= x1; tx++) {
+    for (let ty = y0; ty <= y1; ty++) {
+      const wtx = ((tx % n) + n) % n;
+      const wty = ((ty % n) + n) % n;
+      const key = zoom + '/' + wtx + '/' + wty;
+      const img = cache[key];
+      if (img && img !== 'err' && img !== null) {
+        ctx.drawImage(img, Math.round(tx * TILE + offX), Math.round(ty * TILE + offY), TILE, TILE);
+      }
+    }
+  }
+
+  // Draw pins
+  PINS.forEach(function(pin) {
+    const w = ll2world(pin.lat, pin.lng);
+    const sx = w.x + offX;
+    const sy = w.y + offY;
+
+    // Glow
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, 30);
+    g.addColorStop(0, pin.c1 + '44');
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 30, 0, Math.PI*2);
+    ctx.fill();
+
+    // Circle fill
+    const grad = ctx.createLinearGradient(sx-18, sy-18, sx+18, sy+18);
+    grad.addColorStop(0, pin.c1);
+    grad.addColorStop(1, pin.c2);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 20, 0, Math.PI*2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Emoji
+    ctx.font = '14px Arial,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'white';
+    ctx.fillText(pin.emoji, sx, sy);
+
+    // Tail
+    ctx.fillStyle = pin.c1;
+    ctx.beginPath();
+    ctx.moveTo(sx-3, sy+20);
+    ctx.lineTo(sx+3, sy+20);
+    ctx.lineTo(sx, sy+30);
+    ctx.closePath();
+    ctx.fill();
+  });
+}
+
+function loadVisible() {
+  const n = Math.pow(2, zoom);
+  const x0 = Math.floor(-offX / TILE) - 1;
+  const y0 = Math.floor(-offY / TILE) - 1;
+  const x1 = Math.floor((W - offX) / TILE) + 1;
+  const y1 = Math.floor((H - offY) / TILE) + 1;
+  for (let tx = x0; tx <= x1; tx++) {
+    for (let ty = y0; ty <= y1; ty++) { loadTile(tx, ty); }
+  }
+}
+
+// Touch pan
+let touch0 = null;
+let moved = false;
+
+document.addEventListener('touchstart', function(e) {
+  if (e.touches.length === 1) {
+    touch0 = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+    moved = false;
+  }
+  e.preventDefault();
+}, {passive:false});
+
+document.addEventListener('touchmove', function(e) {
+  if (e.touches.length === 1 && touch0) {
+    const dx = e.touches[0].clientX - touch0.x;
+    const dy = e.touches[0].clientY - touch0.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+    offX += dx; offY += dy;
+    touch0 = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+    loadVisible();
+    draw();
+  }
+  e.preventDefault();
+}, {passive:false});
+
+document.addEventListener('touchend', function(e) {
+  if (!moved && touch0) {
+    const tx = touch0.x, ty = touch0.y;
+    var hit = null;
+    PINS.forEach(function(pin) {
+      const w = ll2world(pin.lat, pin.lng);
+      const sx = w.x + offX, sy = w.y + offY;
+      if (Math.sqrt((tx-sx)*(tx-sx)+(ty-sy)*(ty-sy)) < 32) hit = pin;
+    });
+    if (hit) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'select', id:hit.id}));
+    } else {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'deselect'}));
+    }
+  }
+  touch0 = null;
+  e.preventDefault();
+}, {passive:false});
+
+loadVisible();
+draw();
+</script>
+</body>
+</html>`;
+}
+
+// ── Detail card ───────────────────────────────────────────────────────────────
+function TankDetailCard({
+  pin, onClose, onNavigate,
+}: { pin: TankPin; onClose: () => void; onNavigate: () => void }) {
+  const meta = tankTypeMeta[pin.tankType] ?? tankTypeMeta.drinking;
+  const health = pin.device?.healthLevel ?? null;
+  const healthColor = health === 'healthy' ? colors.success
+    : health === 'good' ? colors.teal
+    : health === 'warning' ? colors.warning
+    : colors.danger;
+
+  return (
+    <GlassSurface style={styles.card}>
+      <LinearGradient
+        colors={meta.gradient as [string, string, ...string[]]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={styles.cardAccent}
+      />
+      <View style={styles.cardBody}>
+        <View style={styles.cardLeft}>
+          <View style={styles.typeBadge}>
+            <LinearGradient
+              colors={meta.gradient as [string, string, ...string[]]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            />
+            <Ionicons name={meta.icon as any} size={11} color="#fff" />
+            <Text style={styles.badgeText}>{meta.label}</Text>
+          </View>
+
+          <Text style={styles.cardName} numberOfLines={1}>{pin.tankName}</Text>
+
+          <View style={styles.row}>
+            <Ionicons name="location-outline" size={12} color={colors.textTertiary} />
+            <Text style={styles.locationText} numberOfLines={1}>{pin.location}</Text>
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.chip}>
+              <Ionicons name="cube-outline" size={11} color={colors.textSecondary} />
+              <Text style={styles.chipText}>{pin.capacity.toLocaleString()} L</Text>
+            </View>
+            {health && (
+              <View style={[styles.chip, { borderColor: healthColor + '50' }]}>
+                <View style={[styles.dot, { backgroundColor: healthColor }]} />
+                <Text style={[styles.chipText, { color: healthColor, textTransform: 'capitalize' }]}>
+                  {health}
+                </Text>
+              </View>
+            )}
+            {pin.device && (
+              <View style={styles.chip}>
+                <Ionicons name="hardware-chip-outline" size={11} color={colors.textSecondary} />
+                <Text style={styles.chipText}>{pin.device.deviceName}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.cardRight}>
+          <PressableScale onPress={onNavigate}>
+            <View style={styles.goBtn}>
+              <Ionicons name="arrow-forward" size={18} color={colors.cyan} />
+            </View>
+          </PressableScale>
+          <Pressable onPress={onClose} style={styles.closeBtn}>
+            <Ionicons name="close" size={15} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+      </View>
+    </GlassSurface>
+  );
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+export default function MapScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const webRef = useRef<WebView>(null);
+
+  const [pins, setPins] = useState<TankPin[]>([]);
+  const [selectedPin, setSelectedPin] = useState<TankPin | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const cardY = useSharedValue(200);
+  const cardOpacity = useSharedValue(0);
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: cardY.value }],
+    opacity: cardOpacity.value,
+  }));
+
+  const showCard = () => {
+    cardY.value = withSpring(0, { damping: 20, stiffness: 240 });
+    cardOpacity.value = withTiming(1, { duration: 180 });
+  };
+  const hideCard = () => {
+    cardY.value = withSpring(180, { damping: 20, stiffness: 240 });
+    cardOpacity.value = withTiming(0, { duration: 140 });
+  };
+
+  const load = useCallback(async () => {
+    try {
+      const [tanks, devices] = await Promise.all([tanksApi.list(), devicesApi.list()]);
+      const devByTank: Record<string, DeviceRecord> = {};
+      devices.forEach(d => { if (d.tankId) devByTank[d.tankId] = d; });
+
+      const result: TankPin[] = [];
+      for (const tank of tanks) {
+        const coord = tank.location ? LOCATION_COORDS[tank.location] : undefined;
+        if (coord) result.push({ ...tank, lat: coord[0], lng: coord[1], device: devByTank[tank._id] });
+      }
+      setPins(result);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onMessage = useCallback((e: any) => {
+    try {
+      const msg = JSON.parse(e.nativeEvent.data);
+      if (msg.type === 'select') {
+        const pin = pins.find(p => p._id === msg.id);
+        if (pin) { setSelectedPin(pin); showCard(); }
+      } else {
+        hideCard();
+        setTimeout(() => setSelectedPin(null), 160);
+      }
+    } catch { /* ignore */ }
+  }, [pins]);
+
+  const deselect = useCallback(() => {
+    hideCard();
+    setTimeout(() => setSelectedPin(null), 160);
+  }, []);
+
+  const tabBarH = Platform.OS === 'ios' ? 100 : 80;
+  const html = pins.length > 0 ? buildMapHTML(pins) : null;
+
+  return (
+    <View style={styles.root}>
+      {html ? (
+        <WebView
+          ref={webRef}
+          style={StyleSheet.absoluteFill}
+          source={{ html }}
+          originWhitelist={['*']}
+          onMessage={onMessage}
+          scrollEnabled={false}
+          bounces={false}
+          overScrollMode="never"
+          javaScriptEnabled
+          domStorageEnabled
+          mixedContentMode="always"
+        />
+      ) : (
+        <View style={styles.loadingBg} />
+      )}
+
+      {/* Top pill */}
+      <View style={[styles.topBar, { top: insets.top + 12 }]} pointerEvents="none">
+        <GlassSurface style={styles.pill}>
+          <Ionicons name="map" size={15} color={colors.cyan} />
+          <Text style={styles.pillText}>
+            {loading ? 'Loading map…' : `${pins.length} sensor${pins.length !== 1 ? 's' : ''} mapped`}
+          </Text>
+          {loading && <ActivityIndicator size="small" color={colors.cyan} style={{ marginLeft: 4 }} />}
+        </GlassSurface>
+      </View>
+
+      {/* Legend */}
+      {!loading && pins.length > 0 && (
+        <View style={[styles.legend, { top: insets.top + 62 }]} pointerEvents="none">
+          <GlassSurface style={styles.legendCard}>
+            {(Object.keys(PIN_STYLE) as (keyof typeof PIN_STYLE)[]).map(type => {
+              const count = pins.filter(p => p.tankType === type).length;
+              if (count === 0) return null;
+              const ps = PIN_STYLE[type];
+              return (
+                <View key={type} style={styles.legendRow}>
+                  <View style={[styles.legendDot, { backgroundColor: ps.c1 }]} />
+                  <Text style={styles.legendLabel}>
+                    {(tankTypeMeta[type] ?? tankTypeMeta.drinking).label}
+                  </Text>
+                  <Text style={styles.legendCount}>{count}</Text>
+                </View>
+              );
+            })}
+          </GlassSurface>
+        </View>
+      )}
+
+      {/* Detail card */}
+      <Animated.View
+        style={[styles.cardWrap, { bottom: tabBarH + 16 }, cardStyle]}
+        pointerEvents={selectedPin ? 'box-none' : 'none'}
+      >
+        {selectedPin && (
+          <TankDetailCard
+            pin={selectedPin}
+            onClose={deselect}
+            onNavigate={() => { deselect(); router.push(`/tank/${selectedPin._id}` as any); }}
+          />
+        )}
+      </Animated.View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#010B1E' },
+  loadingBg: { flex: 1, backgroundColor: '#010B1E' },
+  topBar: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  pill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  pillText: {
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.size.sm, color: colors.textPrimary,
+  },
+  legend: { position: 'absolute', left: 14 },
+  legendCard: { padding: spacing.sm, borderRadius: radius.md, gap: 5 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: 10, color: colors.textSecondary, flex: 1,
+  },
+  legendCount: {
+    fontFamily: typography.fontFamily.bodyBold,
+    fontSize: 10, color: colors.textPrimary,
+  },
+  cardWrap: { position: 'absolute', left: spacing.lg, right: spacing.lg },
+  card: { borderRadius: radius.lg, overflow: 'hidden' },
+  cardAccent: { height: 3 },
+  cardBody: { flexDirection: 'row', padding: spacing.md, gap: spacing.md },
+  cardLeft: { flex: 1, gap: 6 },
+  cardRight: { alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
+  typeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4,
+    borderRadius: radius.pill, overflow: 'hidden',
+  },
+  badgeText: { fontFamily: typography.fontFamily.bodyBold, fontSize: 10, color: '#fff' },
+  cardName: {
+    fontFamily: typography.fontFamily.headingMedium,
+    fontSize: typography.size.md, color: colors.textPrimary,
+  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  locationText: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.size.xs, color: colors.textTertiary,
+  },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.glassFill, borderWidth: 1, borderColor: colors.glassBorder,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill,
+  },
+  chipText: {
+    fontFamily: typography.fontFamily.bodyMedium, fontSize: 10, color: colors.textSecondary,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  goBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: colors.glassFillStrong,
+    borderWidth: 1, borderColor: colors.cyan + '30',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  closeBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.glassFill,
+    alignItems: 'center', justifyContent: 'center',
+  },
+});

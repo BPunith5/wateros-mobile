@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 16.0.0"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "distribution": "store"
+      }
+    },
+    "adhoc": {
+      "distribution": "internal",
+      "ios": {
+        "distribution": "internal"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
