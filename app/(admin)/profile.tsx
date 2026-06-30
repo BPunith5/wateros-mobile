@@ -137,7 +137,7 @@ export default function AdminProfileScreen() {
           <GlassSurface style={styles.card}>
             <MenuRow icon="help-circle-outline" label="Help Center" showChevron onPress={() => {}} />
             <View style={styles.divider} />
-            <MenuRow icon="information-circle-outline" label="About WaterOS" value="v1.0.0" />
+            <MenuRow icon="information-circle-outline" label="About Aqua Nigha" value="v1.0.0" />
           </GlassSurface>
 
           <LiquidButton

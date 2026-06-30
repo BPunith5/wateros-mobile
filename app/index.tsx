@@ -204,7 +204,7 @@ export default function SplashScreen() {
             </LinearGradient>
           </Animated.View>
         </Animated.View>
-        <Animated.Text style={[styles.logoText, logoStyle]}>WaterOS</Animated.Text>
+        <Animated.Text style={[styles.logoText, logoStyle]}>Aqua Nigha</Animated.Text>
         <Animated.Text style={[styles.tagline, taglineStyle]}>
           Smart Water Intelligence
         </Animated.Text>

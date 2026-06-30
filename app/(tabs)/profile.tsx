@@ -125,7 +125,7 @@ export default function ProfileScreen() {
           <GlassSurface style={s.menuCard}>
             <MenuRow icon="help-circle-outline" label="Help Center" onPress={() => {}} />
             <View style={s.divider} />
-            <MenuRow icon="information-circle-outline" label="About WaterOS" value="v1.0.0" onPress={() => {}} />
+            <MenuRow icon="information-circle-outline" label="About Aqua Nigha" value="v1.0.0" onPress={() => {}} />
           </GlassSurface>
 
           {/* Log out */}

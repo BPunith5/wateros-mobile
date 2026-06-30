@@ -57,7 +57,7 @@ export default function RegisterScreen() {
           >
             {/* Logo */}
             <View style={styles.logoSection}>
-              <Text style={styles.logo}>WaterOS</Text>
+              <Text style={styles.logo}>Aqua Nigha</Text>
               <Text style={styles.subtitle}>Smart Water Monitoring</Text>
             </View>
 
