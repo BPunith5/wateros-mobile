@@ -275,7 +275,7 @@ export default function DashboardScreen() {
             <Reveal index={0}>
               <GlassSurface style={s.emptyCard}>
                 <Text style={s.emptyTitle}>No tanks yet</Text>
-                <Text style={s.emptySub}>Add a sensor to start monitoring your first tank.</Text>
+                <Text style={s.emptySub}>Add a device to start monitoring your first tank.</Text>
               </GlassSurface>
             </Reveal>
           )}

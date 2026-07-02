@@ -252,7 +252,7 @@ export default function AlertsScreen() {
                 <View style={s.inputWrap}>
                   <TextInput
                     style={s.input}
-                    placeholder="e.g. Sensor not reporting"
+                    placeholder="e.g. Device not reporting"
                     placeholderTextColor={colors.textTertiary}
                     value={subject}
                     onChangeText={setSubject}

@@ -339,7 +339,7 @@ export default function TankDetailScreen() {
               {([
                 { label: 'Tank Health', score: tankHealthScore },
                 { label: 'Water Quality', score: waterQualityScore },
-                { label: 'Sensor Health', score: sensorHealthScore },
+                { label: 'Device Health', score: sensorHealthScore },
               ] as { label: string; score: number | null }[]).map((item, idx) => (
                 <View key={item.label} style={[styles.healthCol, idx > 0 && styles.healthColBorder]}>
                   <Text style={[
@@ -357,7 +357,7 @@ export default function TankDetailScreen() {
           {/* Telemetry stats */}
           {telemetry && (
             <>
-              <SectionHeader title="Sensor Readings" style={styles.sectionHeader} />
+              <SectionHeader title="Device Readings" style={styles.sectionHeader} />
               <View style={styles.statsGrid}>
                 <StatCard icon="thermometer-outline" value={`${telemetry.temperature.toFixed(1)}°`} label="Temperature °C" color={colors.warning} style={styles.statCard} />
                 <StatCard icon="flask-outline" value={telemetry.ph.toFixed(1)} label="pH Level" color={colors.teal} style={styles.statCard} />
@@ -407,7 +407,7 @@ export default function TankDetailScreen() {
           <View style={styles.actionBtns}>
             {!device && (
               <LiquidButton
-                label="Connect a Sensor"
+                label="Connect a Device"
                 onPress={() => router.push('/(tabs)/devices?addSensor=1' as any)}
                 icon="hardware-chip-outline"
                 style={styles.actionBtn}

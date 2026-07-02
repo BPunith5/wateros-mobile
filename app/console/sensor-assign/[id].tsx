@@ -93,7 +93,7 @@ export default function SensorAssignScreen() {
     if (!device) return;
     Alert.alert(
       'Remove Admin',
-      `Remove ${admin.name} from this sensor?`,
+      `Remove from this device?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -145,7 +145,7 @@ export default function SensorAssignScreen() {
             <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
             </Pressable>
-            <Text style={styles.title}>Sensor Not Found</Text>
+            <Text style={styles.title}>Device Not Found</Text>
             <View style={styles.backBtn} />
           </View>
         </SafeAreaView>
@@ -199,11 +199,11 @@ export default function SensorAssignScreen() {
                 <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
                   <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
                 </Pressable>
-                <Text style={styles.title} numberOfLines={1}>Sensor Assignments</Text>
+                <Text style={styles.title} numberOfLines={1}>Device Assignments</Text>
                 <View style={styles.backBtn} />
               </View>
 
-              {/* Sensor info card */}
+              {/* Device info card */}
               <GlassSurface style={styles.deviceCard}>
                 <View style={styles.deviceRow}>
                   <View style={styles.deviceIconWrap}>

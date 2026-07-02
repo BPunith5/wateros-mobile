@@ -180,7 +180,7 @@ export default function ConsoleDevicesScreen() {
                       <Ionicons name="hardware-chip-outline" size={18} color={colors.textTertiary} style={styles.inputIcon} />
                       <TextInput
                         style={styles.textInput}
-                        placeholder="e.g. Sensor Unit 01"
+                        placeholder="e.g. Device Unit 01"
                         placeholderTextColor={colors.textTertiary}
                         value={provName}
                         onChangeText={setProvName}

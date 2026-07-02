@@ -165,7 +165,7 @@ export default function AdminComplaintsScreen() {
               <GlassSurface style={styles.emptyCard}>
                 <Ionicons name="flag-outline" size={36} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>No complaints assigned</Text>
-                <Text style={styles.emptySubtext}>Complaints from users on your sensors will appear here.</Text>
+                <Text style={styles.emptySubtext}>Complaints from users on your devices will appear here.</Text>
               </GlassSurface>
             ) : (
               <GlassSurface style={styles.emptyCard}>

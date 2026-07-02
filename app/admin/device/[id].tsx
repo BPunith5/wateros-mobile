@@ -126,7 +126,7 @@ export default function AdminDeviceDetailScreen() {
           <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
             <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
           </Pressable>
-          <Text style={styles.headerTitle} numberOfLines={1}>Sensor Detail</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>Device Detail</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -255,7 +255,7 @@ export default function AdminDeviceDetailScreen() {
           )}
 
           {/* Device info */}
-          <SectionLabel label="Sensor Info" />
+          <SectionLabel label="Device Info" />
           <GlassSurface style={styles.infoCard}>
             <InfoRow label="Device ID" value={device.deviceId} />
             <Divider />

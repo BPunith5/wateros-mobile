@@ -247,7 +247,7 @@ export default function DevicesScreen() {
   // ── Manual code submit ──
   const handleCodeSubmit = () => {
     if (!deviceId.trim() || !activationPin.trim()) {
-      setIdentifyError('Enter both the Device ID and PIN printed on your sensor.');
+      setIdentifyError('Enter both the Device ID and PIN printed on your device.');
       return;
     }
     setIdentifyError('');
@@ -257,7 +257,7 @@ export default function DevicesScreen() {
   // ── Provision new sensor ──
   const handleProvision = async () => {
     if (!provisionName.trim()) {
-      setIdentifyError('Enter a sensor name.');
+      setIdentifyError('Enter a device name.');
       return;
     }
     setProvisioning(true);
@@ -341,10 +341,10 @@ export default function DevicesScreen() {
   }
 
   const wizardTitle =
-    wizardStep === 'provision' ? 'Set Up New Sensor'
-    : wizardStep === 'provisioned' ? 'Sensor Ready'
+    wizardStep === 'provision' ? 'Set Up New Device'
+    : wizardStep === 'provisioned' ? 'Device Ready'
     : wizardStep === 'tank' ? 'Set Up Tank'
-    : 'Connect Sensor';
+    : 'Connect Device';
 
   const renderDevice = ({ item }: { item: DeviceRecord }) => {
     const tName = tankName(item.tankId);
@@ -412,7 +412,7 @@ export default function DevicesScreen() {
             <View>
               <View style={styles.topRow}>
                 <View>
-                  <Text style={styles.pageTitle}>Sensors</Text>
+                  <Text style={styles.pageTitle}>Devices</Text>
                   <Text style={styles.pageSubtitle}>{devices.length} registered · {activeCount} active</Text>
                 </View>
                 <Pressable onPress={openWizard} style={styles.addBtn}>
@@ -436,8 +436,8 @@ export default function DevicesScreen() {
               <GlassSurface style={styles.emptyCard}>
                 <Ionicons name="hardware-chip-outline" size={40} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>No devices yet</Text>
-                <Text style={styles.emptySub}>Register a sensor and connect it to a tank to start streaming live readings.</Text>
-                <LiquidButton label="Add Sensor" onPress={openWizard} icon="add-circle-outline" style={styles.emptyBtn} />
+                <Text style={styles.emptySub}>Register a device and connect it to a tank to start streaming live readings.</Text>
+                <LiquidButton label="Add Device" onPress={openWizard} icon="add-circle-outline" style={styles.emptyBtn} />
               </GlassSurface>
             ) : (
               <GlassSurface style={styles.emptyCard}>
@@ -455,7 +455,7 @@ export default function DevicesScreen() {
         onClose={() => setDetailDevice(null)}
       />
 
-      {/* Add Sensor Wizard */}
+      {/* Add Device Wizard */}
       <Modal visible={showWizard} animationType="slide" transparent onRequestClose={goBack}>
         <View style={styles.overlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.sheet}>
@@ -490,7 +490,7 @@ export default function DevicesScreen() {
                         }
                       </View>
                       <Text style={[styles.stepLabel, active && { color: colors.textPrimary }]}>
-                        {n === 1 ? 'Identify Sensor' : 'Set Up Tank'}
+                        {n === 1 ? 'Identify Device' : 'Set Up Tank'}
                       </Text>
                       {n < 2 && <View style={[styles.stepLine, done && { backgroundColor: colors.cyan }]} />}
                     </React.Fragment>
@@ -504,8 +504,8 @@ export default function DevicesScreen() {
                 {wizardStep === 'identify' && (
                   <View style={styles.stepContent}>
                     <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>How do you want to add a sensor?</Text>
-                      <Text style={styles.infoBannerSub}>Scan the QR on your sensor, type its code, or register a new sensor.</Text>
+                      <Text style={styles.infoBannerTitle}>How do you want to add a device?</Text>
+                      <Text style={styles.infoBannerSub}>Scan the QR on your device, type its code, or register a new device.</Text>
                     </GlassSurface>
 
                     <View style={styles.tabRow}>
@@ -533,7 +533,7 @@ export default function DevicesScreen() {
                           <Ionicons name="keypad-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
                           <TextInput
                             style={styles.textInput}
-                            placeholder="6-digit PIN on sensor label"
+                            placeholder="6-digit PIN on device label"
                             placeholderTextColor={colors.textTertiary}
                             value={activationPin}
                             onChangeText={setActivationPin}
@@ -567,7 +567,7 @@ export default function DevicesScreen() {
                     </View>
 
                     <LiquidButton
-                      label="Set Up New Sensor"
+                      label="Set Up New Device"
                       onPress={() => { setIdentifyError(''); setWizardStep('provision'); }}
                       variant="ghost"
                       fullWidth
@@ -580,15 +580,15 @@ export default function DevicesScreen() {
                 {wizardStep === 'provision' && (
                   <View style={styles.stepContent}>
                     <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>Provision a new sensor</Text>
-                      <Text style={styles.infoBannerSub}>Give your sensor a name. You'll get a unique Device ID, PIN and QR code.</Text>
+                      <Text style={styles.infoBannerTitle}>Provision a new device</Text>
+                      <Text style={styles.infoBannerSub}>Give your device a name. You'll get a unique Device ID, PIN and QR code.</Text>
                     </GlassSurface>
-                    <Text style={styles.inputLabel}>Sensor Name</Text>
+                    <Text style={styles.inputLabel}>Device Name</Text>
                     <View style={styles.inputRow}>
                       <Ionicons name="hardware-chip-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
                       <TextInput
                         style={styles.textInput}
-                        placeholder="e.g. Rooftop Tank Sensor"
+                        placeholder="e.g. Rooftop Tank Device"
                         placeholderTextColor={colors.textTertiary}
                         value={provisionName}
                         onChangeText={setProvisionName}
@@ -598,7 +598,7 @@ export default function DevicesScreen() {
                     </View>
                     {identifyError ? <Text style={styles.errorText}>{identifyError}</Text> : null}
                     <LiquidButton
-                      label="Register Sensor"
+                      label="Register Device"
                       onPress={handleProvision}
                       loading={provisioning}
                       fullWidth
@@ -646,14 +646,14 @@ export default function DevicesScreen() {
                 {/* ── tank setup ── */}
                 {wizardStep === 'tank' && (
                   <View style={styles.stepContent}>
-                    {/* Sensor confirmation */}
+                    {/* Device confirmation */}
                     {deviceId ? (
                       <GlassSurface style={styles.sensorConfirm}>
                         <View style={styles.sensorConfirmIcon}>
                           <Ionicons name="hardware-chip-outline" size={15} color={colors.cyan} />
                         </View>
                         <View style={styles.sensorConfirmInfo}>
-                          <Text style={styles.sensorConfirmLabel}>Sensor identified</Text>
+                          <Text style={styles.sensorConfirmLabel}>Device identified</Text>
                           <Text style={styles.sensorConfirmId} numberOfLines={1}>
                             {deviceId}
                             {activationPin ? <Text style={{ color: colors.textTertiary }}> · PIN {activationPin}</Text> : null}
@@ -662,7 +662,7 @@ export default function DevicesScreen() {
                       </GlassSurface>
                     ) : null}
 
-                    <Text style={styles.tankQuestion}>Which tank is this sensor monitoring?</Text>
+                    <Text style={styles.tankQuestion}>Which tank is this device monitoring?</Text>
 
                     <View style={styles.tabRow}>
                       {tanks.length > 0 && (
@@ -742,7 +742,7 @@ export default function DevicesScreen() {
                     {connectError ? <Text style={styles.errorText}>{connectError}</Text> : null}
 
                     <LiquidButton
-                      label={connecting ? 'Connecting…' : 'Connect Sensor'}
+                      label={connecting ? 'Connecting…' : 'Connect Device'}
                       onPress={handleConnect}
                       loading={connecting}
                       fullWidth

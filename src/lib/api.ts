@@ -95,7 +95,9 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const authApi = {
   login: (email: string, password: string) =>
-    req<{ token: string; user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    req<{ message: string; email: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  verifyOtp: (email: string, otp: string) =>
+    req<{ token: string; user: AuthUser }>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email, otp }) }),
   register: (name: string, email: string, password: string) =>
     req<{ token: string; user: AuthUser }>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
   me: () => req<{ user: AuthUser }>('/auth/me').then(r => r.user),

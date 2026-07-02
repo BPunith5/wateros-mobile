@@ -122,7 +122,7 @@ export default function AnalyticsScreen() {
                 <StatCard
                   icon="pulse-outline"
                   value={`${Math.round(summary.deviceUptimePercent)}%`}
-                  label="Sensor Uptime"
+                  label="Device Uptime"
                   color={colors.success}
                 />
               </Reveal>
@@ -133,7 +133,7 @@ export default function AnalyticsScreen() {
             <GlassSurface style={s.emptyCard}>
               <Ionicons name="analytics-outline" size={36} color={colors.textTertiary} />
               <Text style={s.emptyTitle}>No data for this period</Text>
-              <Text style={s.emptySub}>Connect a sensor and wait for readings</Text>
+              <Text style={s.emptySub}>Connect a device and wait for readings</Text>
             </GlassSurface>
           ) : series.length > 0 ? (
             <>

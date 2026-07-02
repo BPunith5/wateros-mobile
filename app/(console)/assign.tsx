@@ -104,7 +104,7 @@ export default function AssignScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.aqua} />}
           ListHeaderComponent={
             <View>
-              <SectionHeader title="Sensor Assignments" style={styles.sectionHeader} />
+              <SectionHeader title="Device Assignments" style={styles.sectionHeader} />
               {/* Search bar */}
               <View style={styles.searchWrap}>
                 <Ionicons name="search-outline" size={16} color={colors.textTertiary} style={styles.searchIcon} />
@@ -134,7 +134,7 @@ export default function AssignScreen() {
               <GlassSurface style={styles.emptyCard}>
                 <Ionicons name="hardware-chip-outline" size={36} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>
-                  {search ? 'No sensors match your search' : 'No sensors provisioned yet'}
+                  {search ? 'No devices match your search' : 'No devices provisioned yet'}
                 </Text>
               </GlassSurface>
             )

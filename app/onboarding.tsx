@@ -42,7 +42,7 @@ const SLIDES = [
   },
   {
     title: 'Live Intelligence',
-    subtitle: 'pH, temperature, dissolved oxygen, turbidity — multi-sensor insights in one beautiful view.',
+    subtitle: 'pH, temperature, dissolved oxygen, turbidity — multi-device insights in one beautiful view.',
     Illustration: AnalyticsIllustration,
     accent: colors.seafoam,
     gradient: ['#010B1E', '#032436', '#063D4A'] as const,
