@@ -9,8 +9,8 @@ import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import GlassInput from '@/src/components/glass/GlassInput';
 import LiquidButton from '@/src/components/glass/LiquidButton';
-import { useAuth } from '@/src/context/AuthContext';
 import { authApi } from '@/src/lib/api';
+import { useAuth } from '@/src/context/AuthContext';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
 
 const OTP_LENGTH = 6;
@@ -20,10 +20,8 @@ export default function LoginScreen() {
   const { loginWithToken } = useAuth();
   const router = useRouter();
 
-  const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
+  const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -38,19 +36,19 @@ export default function LoginScreen() {
   }, [countdown]);
 
   const handleSendOtp = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.');
+    if (!email.trim()) {
+      setError('Please enter your email address.');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await authApi.login(email.trim(), password);
+      await authApi.login(email.trim());
       setStep('otp');
       setCountdown(RESEND_COOLDOWN);
       setTimeout(() => inputRefs.current[0]?.focus(), 300);
     } catch (e: any) {
-      setError(e.message ?? 'Login failed. Please try again.');
+      setError(e.message ?? 'Failed to send code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -92,7 +90,7 @@ export default function LoginScreen() {
     setError('');
     setLoading(true);
     try {
-      await authApi.login(email.trim(), password);
+      await authApi.login(email.trim());
       setCountdown(RESEND_COOLDOWN);
       setTimeout(() => inputRefs.current[0]?.focus(), 300);
     } catch (e: any) {
@@ -118,9 +116,10 @@ export default function LoginScreen() {
             </View>
 
             <GlassSurface style={styles.card}>
-              {step === 'credentials' ? (
+              {step === 'email' ? (
                 <>
                   <Text style={styles.cardTitle}>Sign In</Text>
+                  <Text style={styles.cardHint}>Enter your email and we'll send you a login code.</Text>
 
                   <GlassInput
                     label="Email Address"
@@ -134,24 +133,10 @@ export default function LoginScreen() {
                     placeholder="you@example.com"
                   />
 
-                  <GlassInput
-                    label="Password"
-                    icon="lock-closed-outline"
-                    rightIcon={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    onRightIconPress={() => setShowPassword(v => !v)}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoComplete="password"
-                    textContentType="password"
-                    placeholder="••••••••"
-                  />
-
                   {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
                   <LiquidButton
-                    label="Send OTP"
+                    label="Send Login Code"
                     onPress={handleSendOtp}
                     loading={loading}
                     fullWidth
@@ -199,14 +184,14 @@ export default function LoginScreen() {
                     </Pressable>
                   </View>
 
-                  <Pressable onPress={() => { setStep('credentials'); setError(''); setOtp(['','','','','','']); }} hitSlop={8}>
-                    <Text style={styles.backLink}>← Change email / password</Text>
+                  <Pressable onPress={() => { setStep('email'); setError(''); setOtp(['','','','','','']); }} hitSlop={8}>
+                    <Text style={styles.backLink}>← Change email</Text>
                   </Pressable>
                 </>
               )}
             </GlassSurface>
 
-            {step === 'credentials' && (
+            {step === 'email' && (
               <View style={styles.footer}>
                 <Text style={styles.footerText}>Don't have an account? </Text>
                 <Pressable onPress={() => router.replace('/(auth)/register')} hitSlop={8}>
@@ -249,7 +234,14 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.headingBold,
     fontSize: typography.size.xl,
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  cardHint: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
     marginBottom: spacing.md,
+    lineHeight: 20,
   },
   otpHint: {
     fontFamily: typography.fontFamily.body,

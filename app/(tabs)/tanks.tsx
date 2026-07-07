@@ -10,6 +10,7 @@ import FilterPill from '@/src/components/glass/FilterPill';
 import Reveal from '@/src/components/glass/Reveal';
 import TankListCard from '@/src/components/water/TankListCard';
 import { tanksApi, TankRecord, TankType } from '@/src/lib/api';
+import { getCached, setCached } from '@/src/lib/cache';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
 
 type Filter = 'all' | TankType;
@@ -30,8 +31,12 @@ export default function TanksScreen() {
   const [filter, setFilter] = useState<Filter>('all');
 
   const load = useCallback(async () => {
+    const cached = getCached<TankRecord[]>('tanks');
+    if (cached) { setTanks(cached); setLoading(false); }
+
     try {
       const data = await tanksApi.list();
+      setCached('tanks', data);
       setTanks(data);
     } catch { /* silent */ }
     finally {

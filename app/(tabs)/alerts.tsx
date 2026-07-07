@@ -13,6 +13,7 @@ import Reveal from '@/src/components/glass/Reveal';
 import AlertCard from '@/src/components/alerts/AlertCard';
 import LiquidButton from '@/src/components/glass/LiquidButton';
 import { alertsApi, complaintsApi, tanksApi, AlertRecord, AlertSeverity, TankRecord, ComplaintRecord } from '@/src/lib/api';
+import { getCached, setCached } from '@/src/lib/cache';
 import { colors, radius, spacing, typography } from '@/src/theme/tokens';
 
 type Filter = 'all' | AlertSeverity;
@@ -45,12 +46,16 @@ export default function AlertsScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
+    const cached = getCached<{ alerts: AlertRecord[]; complaints: ComplaintRecord[]; tanks: TankRecord[] }>('alerts');
+    if (cached) { setAlerts(cached.alerts); setMyComplaints(cached.complaints); setTanks(cached.tanks); setLoading(false); }
+
     try {
       const [data, complaints, tankList] = await Promise.all([
         alertsApi.list(),
         complaintsApi.mySubmissions(),
         tanksApi.list(),
       ]);
+      setCached('alerts', { alerts: data, complaints, tanks: tankList });
       setAlerts(data);
       setMyComplaints(complaints);
       setTanks(tankList);
@@ -328,7 +333,7 @@ const s = StyleSheet.create({
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: 'rgba(5,18,40,0.98)', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    backgroundColor: '#080f1e', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
     borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
     paddingTop: spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: Platform.OS === 'ios' ? 40 : 24, gap: spacing.md,
   },

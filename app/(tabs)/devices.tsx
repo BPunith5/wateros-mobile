@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Modal, TextInput, Pressable,
-  Image, Platform, ScrollView, RefreshControl, KeyboardAvoidingView,
+  Platform, ScrollView, RefreshControl, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import LiquidButton from '@/src/components/glass/LiquidButton';
@@ -14,11 +13,12 @@ import StatusPill from '@/src/components/glass/StatusPill';
 import FilterPill from '@/src/components/glass/FilterPill';
 import StatCard from '@/src/components/glass/StatCard';
 import { devicesApi, tanksApi, telemetryApi, DeviceRecord, TankRecord, TankType } from '@/src/lib/api';
+import { getCached, setCached } from '@/src/lib/cache';
 import { tankTypeMeta } from '@/src/theme/tokens';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
 
 // ─── wizard step types ───────────────────────────────────────────────────────
-type WizardStep = 'identify' | 'provision' | 'provisioned' | 'tank';
+type WizardStep = 'identify' | 'tank';
 type IdentifyTab = 'code' | 'scan';
 type TankMode = 'existing' | 'new';
 
@@ -32,37 +32,6 @@ function statusColor(status: string): string {
     default: return colors.textTertiary;
   }
 }
-
-// ─── Copy row component ──────────────────────────────────────────────────────
-function CredRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await Clipboard.setStringAsync(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <GlassSurface style={credStyles.row}>
-      <View style={credStyles.info}>
-        <Text style={credStyles.label}>{label}</Text>
-        <Text style={credStyles.value} numberOfLines={1}>{value}</Text>
-      </View>
-      <Pressable onPress={copy} hitSlop={8}>
-        <Ionicons
-          name={copied ? 'checkmark-circle' : 'copy-outline'}
-          size={18}
-          color={copied ? colors.success : colors.textTertiary}
-        />
-      </Pressable>
-    </GlassSurface>
-  );
-}
-const credStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
-  info: { flex: 1 },
-  label: { fontFamily: typography.fontFamily.body, fontSize: 10, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8 },
-  value: { fontFamily: typography.fontFamily.bodySemiBold, fontSize: typography.size.sm, color: colors.textPrimary, marginTop: 2 },
-});
 
 // ─── Device Details Modal ────────────────────────────────────────────────────
 function DeviceDetailsModal({
@@ -137,7 +106,7 @@ function DeviceDetailsModal({
 }
 const detailStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  sheet: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, backgroundColor: '#080f1e' },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.glassBorder, alignSelf: 'center', marginBottom: spacing.xs },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   title: { fontFamily: typography.fontFamily.headingBold, fontSize: typography.size.lg, color: colors.textPrimary },
@@ -174,11 +143,6 @@ export default function DevicesScreen() {
   const [activationPin, setActivationPin] = useState('');
   const [identifyError, setIdentifyError] = useState('');
 
-  // Provision state
-  const [provisionName, setProvisionName] = useState('');
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionedDevice, setProvisionedDevice] = useState<DeviceRecord | null>(null);
-
   // Tank step state
   const [tankMode, setTankMode] = useState<TankMode>('existing');
   const [connectTankId, setConnectTankId] = useState('');
@@ -190,12 +154,14 @@ export default function DevicesScreen() {
   const [connectError, setConnectError] = useState('');
 
   const load = useCallback(async () => {
+    const cached = getCached<{ devices: DeviceRecord[]; tanks: TankRecord[]; gps: Record<string, boolean> }>('user-devices');
+    if (cached) { setDevices(cached.devices); setTanks(cached.tanks); setGpsMap(cached.gps); setLoading(false); if (cached.tanks.length > 0) setConnectTankId(cached.tanks[0]._id); }
+
     try {
       const [d, t] = await Promise.all([devicesApi.list(), tanksApi.list()]);
       setDevices(d);
       setTanks(t);
       if (t.length > 0) setConnectTankId(t[0]._id);
-      // Async GPS check for active devices
       const gps: Record<string, boolean> = {};
       await Promise.all(
         d.filter(dev => dev.status === 'active').map(async dev => {
@@ -208,6 +174,7 @@ export default function DevicesScreen() {
         })
       );
       setGpsMap(gps);
+      setCached('user-devices', { devices: d, tanks: t, gps });
     } catch {
       // silent
     } finally {
@@ -232,8 +199,6 @@ export default function DevicesScreen() {
     setActivationPin('');
 
     setIdentifyError('');
-    setProvisionName('');
-    setProvisionedDevice(null);
     setConnectTankId(tanks.length > 0 ? tanks[0]._id : '');
     setTankMode(tanks.length > 0 ? 'existing' : 'new');
     setNewTankName('');
@@ -254,28 +219,7 @@ export default function DevicesScreen() {
     setWizardStep('tank');
   };
 
-  // ── Provision new sensor ──
-  const handleProvision = async () => {
-    if (!provisionName.trim()) {
-      setIdentifyError('Enter a device name.');
-      return;
-    }
-    setProvisioning(true);
-    setIdentifyError('');
-    try {
-      const device = await devicesApi.register(provisionName.trim());
-      setProvisionedDevice(device);
-      setDeviceId(device.deviceId);
-      setActivationPin(device.activationPin ?? '');
-      setWizardStep('provisioned');
-    } catch (e: any) {
-      setIdentifyError(e.message ?? 'Registration failed.');
-    } finally {
-      setProvisioning(false);
-    }
-  };
-
-  // ── Connect sensor to tank ──
+  // ── Connect device to tank ──
   const handleConnect = async () => {
     setConnectError('');
     let resolvedTankId = connectTankId;
@@ -323,8 +267,6 @@ export default function DevicesScreen() {
 
   const goBack = () => {
     if (wizardStep === 'tank') setWizardStep('identify');
-    else if (wizardStep === 'provisioned') setWizardStep('provision');
-    else if (wizardStep === 'provision') setWizardStep('identify');
     else setShowWizard(false);
   };
 
@@ -340,11 +282,7 @@ export default function DevicesScreen() {
     return tanks.find(t => t._id === tankId)?.tankName ?? null;
   }
 
-  const wizardTitle =
-    wizardStep === 'provision' ? 'Set Up New Device'
-    : wizardStep === 'provisioned' ? 'Device Ready'
-    : wizardStep === 'tank' ? 'Set Up Tank'
-    : 'Connect Device';
+  const wizardTitle = wizardStep === 'tank' ? 'Set Up Tank' : 'Connect Device';
 
   const renderDevice = ({ item }: { item: DeviceRecord }) => {
     const tName = tankName(item.tankId);
@@ -478,7 +416,7 @@ export default function DevicesScreen() {
               {/* Step bar */}
               <View style={styles.stepBar}>
                 {[1, 2].map(n => {
-                  const current = (wizardStep === 'identify' || wizardStep === 'provision' || wizardStep === 'provisioned') ? 1 : 2;
+                  const current = wizardStep === 'identify' ? 1 : 2;
                   const active = n <= current;
                   const done = n < current;
                   return (
@@ -504,8 +442,8 @@ export default function DevicesScreen() {
                 {wizardStep === 'identify' && (
                   <View style={styles.stepContent}>
                     <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>How do you want to add a device?</Text>
-                      <Text style={styles.infoBannerSub}>Scan the QR on your device, type its code, or register a new device.</Text>
+                      <Text style={styles.infoBannerTitle}>Connect a device to your account</Text>
+                      <Text style={styles.infoBannerSub}>Enter the Device ID and Activation PIN printed on your device label, or scan the QR code.</Text>
                     </GlassSurface>
 
                     <View style={styles.tabRow}>
@@ -560,86 +498,6 @@ export default function DevicesScreen() {
                       </View>
                     )}
 
-                    <View style={styles.orRow}>
-                      <View style={styles.orLine} />
-                      <Text style={styles.orText}>or</Text>
-                      <View style={styles.orLine} />
-                    </View>
-
-                    <LiquidButton
-                      label="Set Up New Device"
-                      onPress={() => { setIdentifyError(''); setWizardStep('provision'); }}
-                      variant="ghost"
-                      fullWidth
-                      icon="add-circle-outline"
-                    />
-                  </View>
-                )}
-
-                {/* ── provision ── */}
-                {wizardStep === 'provision' && (
-                  <View style={styles.stepContent}>
-                    <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>Provision a new device</Text>
-                      <Text style={styles.infoBannerSub}>Give your device a name. You'll get a unique Device ID, PIN and QR code.</Text>
-                    </GlassSurface>
-                    <Text style={styles.inputLabel}>Device Name</Text>
-                    <View style={styles.inputRow}>
-                      <Ionicons name="hardware-chip-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.textInput}
-                        placeholder="e.g. Rooftop Tank Device"
-                        placeholderTextColor={colors.textTertiary}
-                        value={provisionName}
-                        onChangeText={setProvisionName}
-                        selectionColor={colors.cyan}
-                        autoFocus
-                      />
-                    </View>
-                    {identifyError ? <Text style={styles.errorText}>{identifyError}</Text> : null}
-                    <LiquidButton
-                      label="Register Device"
-                      onPress={handleProvision}
-                      loading={provisioning}
-                      fullWidth
-                      disabled={!provisionName.trim()}
-                      style={styles.primaryBtn}
-                    />
-                  </View>
-                )}
-
-                {/* ── provisioned ── */}
-                {wizardStep === 'provisioned' && provisionedDevice && (
-                  <View style={styles.stepContent}>
-                    <GlassSurface style={styles.successBanner}>
-                      <View style={styles.successIcon}>
-                        <Ionicons name="checkmark" size={18} color={colors.success} />
-                      </View>
-                      <Text style={styles.successTitle}>{provisionedDevice.deviceName} registered</Text>
-                      <Text style={styles.successSub}>Save these credentials — they're used to program the physical device.</Text>
-                      {provisionedDevice.qrCode && (
-                        <Image source={{ uri: provisionedDevice.qrCode }} style={styles.qrImage} resizeMode="contain" />
-                      )}
-                    </GlassSurface>
-
-                    <View style={styles.credList}>
-                      <CredRow label="Device ID" value={provisionedDevice.deviceId} />
-                      <View style={styles.credDivider} />
-                      <CredRow label="Activation PIN" value={provisionedDevice.activationPin ?? ''} />
-                      {provisionedDevice.secretKey && (
-                        <>
-                          <View style={styles.credDivider} />
-                          <CredRow label="Secret Key" value={provisionedDevice.secretKey} />
-                        </>
-                      )}
-                    </View>
-
-                    <LiquidButton
-                      label="Continue to Tank Setup →"
-                      onPress={() => setWizardStep('tank')}
-                      fullWidth
-                      style={styles.primaryBtn}
-                    />
                   </View>
                 )}
 
@@ -802,7 +660,7 @@ const styles = StyleSheet.create({
   // Wizard overlay
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: { maxHeight: '92%' },
-  wizardContent: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xl, maxHeight: '100%', backgroundColor: 'rgba(3, 20, 46, 0.97)' },
+  wizardContent: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xl, maxHeight: '100%', backgroundColor: '#080f1e' },
   wizardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.glassBorder, alignSelf: 'center', marginBottom: spacing.sm },
   wizardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   wizardBack: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.glassFill, borderWidth: 1, borderColor: colors.glassBorder, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
@@ -826,7 +684,7 @@ const styles = StyleSheet.create({
   tabRow: { flexDirection: 'row', gap: spacing.sm },
   inputGroup: { gap: spacing.sm },
   inputLabel: { fontFamily: typography.fontFamily.bodyMedium, fontSize: typography.size.sm, color: colors.textSecondary, marginBottom: 2 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: colors.glassBorder, borderRadius: radius.md, height: 50, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', borderRadius: radius.md, height: 50, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
   inputIcon: { marginRight: 10 },
   textInput: { flex: 1, fontFamily: typography.fontFamily.body, fontSize: typography.size.base, color: colors.textPrimary, height: '100%' },
   errorText: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.danger },
@@ -843,20 +701,6 @@ const styles = StyleSheet.create({
   cornerTR: { top: 16, right: 16, borderTopWidth: 3, borderRightWidth: 3, borderRadius: 2 },
   cornerBL: { bottom: 16, left: 16, borderBottomWidth: 3, borderLeftWidth: 3, borderRadius: 2 },
   cornerBR: { bottom: 16, right: 16, borderBottomWidth: 3, borderRightWidth: 3, borderRadius: 2 },
-
-  // Or divider
-  orRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  orLine: { flex: 1, height: 1, backgroundColor: colors.glassBorder },
-  orText: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary },
-
-  // Provisioned
-  successBanner: { padding: spacing.lg, alignItems: 'center', gap: spacing.sm },
-  successIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: `${colors.success}22`, borderWidth: 1, borderColor: `${colors.success}55`, alignItems: 'center', justifyContent: 'center' },
-  successTitle: { fontFamily: typography.fontFamily.heading, fontSize: typography.size.base, color: colors.textPrimary },
-  successSub: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary, textAlign: 'center' },
-  qrImage: { width: 150, height: 150, borderRadius: radius.sm, backgroundColor: '#fff', marginTop: spacing.sm },
-  credList: { borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.glassBorder },
-  credDivider: { height: 1, backgroundColor: colors.glassBorder },
 
   // Tank step
   sensorConfirm: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },

@@ -4,7 +4,7 @@ import { authApi, getToken, setToken, removeToken, type AuthUser } from '@/src/l
 type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string) => Promise<void>;
   loginWithToken: (token: string, user: AuthUser) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -32,10 +32,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const { token, user } = await authApi.verifyOtp(email, password);
-    await setToken(token);
-    setUser(user);
+  const login = async (email: string) => {
+    await authApi.login(email);
   };
 
   const loginWithToken = async (token: string, userData: AuthUser) => {

@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { getCached, setCached } from '@/src/lib/cache';
 import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import SectionHeader from '@/src/components/glass/SectionHeader';
@@ -47,6 +48,9 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
+    const cached = getCached<TankData[]>('dashboard');
+    if (cached) { setTankData(cached); setLoading(false); }
+
     try {
       const [tanks, alts, devs] = await Promise.all([
         tanksApi.list(),
@@ -69,6 +73,7 @@ export default function DashboardScreen() {
           return { tank, telemetry, device };
         })
       );
+      setCached('dashboard', combined);
       setTankData(combined);
     } catch { /* silent */ }
     finally {

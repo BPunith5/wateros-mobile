@@ -74,7 +74,8 @@ export type DeviceDetailRecord = Omit<DeviceRecord, 'userId' | 'tankId'> & {
   assignedAdminIds: AssignedAdmin[];
   secretKey?: string;
 };
-export type ProvisionedDeviceResult = { device: DeviceRecord; qrCodeDataUrl: string };
+export type ProvisionedDeviceResult = { device: DeviceRecord & { secretKey?: string }; qrCodeDataUrl: string };
+export type BatchProvisionResult = { devices: (DeviceRecord & { secretKey?: string })[]; csv: string };
 
 async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
@@ -94,8 +95,8 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    req<{ message: string; email: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email: string) =>
+    req<{ message: string; email: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email }) }),
   verifyOtp: (email: string, otp: string) =>
     req<{ token: string; user: AuthUser }>('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email, otp }) }),
   register: (name: string, email: string, password: string) =>
@@ -186,6 +187,8 @@ export const consoleApi = {
   devices: () => req<DeviceRecord[]>('/superadmin/devices'),
   provisionDevice: (deviceName: string, adminId?: string) =>
     req<ProvisionedDeviceResult>('/superadmin/devices', { method: 'POST', body: JSON.stringify({ deviceName, ...(adminId ? { adminId } : {}) }) }),
+  batchProvision: (namePrefix: string, count: number, adminId?: string) =>
+    req<BatchProvisionResult>('/superadmin/devices/batch', { method: 'POST', body: JSON.stringify({ namePrefix, count, ...(adminId ? { adminId } : {}) }) }),
   assignDevice: (deviceMongoId: string, adminId: string) =>
     req<void>(`/superadmin/devices/${deviceMongoId}/assign`, { method: 'POST', body: JSON.stringify({ adminId }) }),
   unassignDevice: (deviceMongoId: string, adminId: string) =>
