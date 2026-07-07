@@ -516,9 +516,16 @@ export default function DevicesScreen() {
                             {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
                             <LiquidButton
                               label="Continue to Tank Setup"
-                              onPress={() => {
+                              onPress={async () => {
                                 if (!activationPin.trim()) { setCodeError('Enter the activation PIN from the device label.'); return; }
-                                setWizardStep('tank');
+                                setCodeError('Verifying…');
+                                try {
+                                  await devicesApi.verifyClaim(registrationCode, activationPin.trim());
+                                  setCodeError('');
+                                  setWizardStep('tank');
+                                } catch (e: any) {
+                                  setCodeError(e.message ?? 'Invalid code or PIN.');
+                                }
                               }}
                               fullWidth
                               disabled={!activationPin.trim()}
@@ -563,12 +570,19 @@ export default function DevicesScreen() {
                         {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
                         <LiquidButton
                           label="Continue to Tank Setup"
-                          onPress={() => {
+                          onPress={async () => {
                             const raw = typedCode.replace(/-/g, '');
                             if (raw.length !== 16) { setCodeError('Enter the full 16-character registration code.'); return; }
                             if (!activationPin.trim()) { setCodeError('Enter the activation PIN from the device label.'); return; }
-                            setRegistrationCode(typedCode.trim());
-                            setWizardStep('tank');
+                            setCodeError('Verifying…');
+                            try {
+                              await devicesApi.verifyClaim(typedCode.trim(), activationPin.trim());
+                              setRegistrationCode(typedCode.trim());
+                              setCodeError('');
+                              setWizardStep('tank');
+                            } catch (e: any) {
+                              setCodeError(e.message ?? 'Invalid code or PIN.');
+                            }
                           }}
                           fullWidth
                           disabled={typedCode.replace(/-/g, '').length < 16 || !activationPin.trim()}
