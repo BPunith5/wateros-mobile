@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import LiquidButton from '@/src/components/glass/LiquidButton';
@@ -141,7 +142,10 @@ export default function DevicesScreen() {
   // Step 1 state
   const [deviceId, setDeviceId] = useState('');
   const [activationPin, setActivationPin] = useState('');
+  const [registrationCode, setRegistrationCode] = useState('');
   const [identifyError, setIdentifyError] = useState('');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
 
   // Tank step state
   const [tankMode, setTankMode] = useState<TankMode>('existing');
@@ -197,7 +201,8 @@ export default function DevicesScreen() {
     setIdentifyTab('code');
     setDeviceId('');
     setActivationPin('');
-
+    setRegistrationCode('');
+    setScanned(false);
     setIdentifyError('');
     setConnectTankId(tanks.length > 0 ? tanks[0]._id : '');
     setTankMode(tanks.length > 0 ? 'existing' : 'new');
@@ -215,6 +220,19 @@ export default function DevicesScreen() {
       setIdentifyError('Enter both the Device ID and PIN printed on your device.');
       return;
     }
+    setIdentifyError('');
+    setWizardStep('tank');
+  };
+
+  // ── QR scan handler ──
+  const handleQrScanned = ({ data }: { data: string }) => {
+    if (scanned) return;
+    setScanned(true);
+    // Registration code is either raw (XXXXXXXXXXXXXXXXX) or formatted (XXXX-XXXX-XXXX-XXXX)
+    const code = data.trim();
+    setRegistrationCode(code);
+    setDeviceId('');
+    setActivationPin('');
     setIdentifyError('');
     setWizardStep('tank');
   };
@@ -253,8 +271,12 @@ export default function DevicesScreen() {
     }
 
     try {
-      const device = await devicesApi.connect(deviceId.trim().toUpperCase(), activationPin.trim(), resolvedTankId);
+      const device = registrationCode
+        ? await devicesApi.claim(registrationCode.trim(), resolvedTankId)
+        : await devicesApi.connect(deviceId.trim().toUpperCase(), activationPin.trim(), resolvedTankId);
       setShowWizard(false);
+      setRegistrationCode('');
+      setScanned(false);
       load();
       if (device.tankId) {
         router.push(`/tank/${device.tankId}` as any);
@@ -490,11 +512,41 @@ export default function DevicesScreen() {
                       </View>
                     ) : (
                       <View style={styles.scanSection}>
-                        <View style={styles.scanMsgWrap}>
-                          <Ionicons name="qr-code-outline" size={40} color={colors.textSecondary} />
-                          <Text style={styles.scanMsg}>QR scanning not available.</Text>
-                          <Text style={[styles.scanMsg, { fontSize: 13, marginTop: 4 }]}>Use the Code tab to enter your Device ID and PIN manually.</Text>
-                        </View>
+                        {!cameraPermission?.granted ? (
+                          <View style={styles.scanMsgWrap}>
+                            <Ionicons name="camera-outline" size={40} color={colors.textSecondary} />
+                            <Text style={styles.scanMsg}>Camera access needed to scan QR codes.</Text>
+                            <Pressable
+                              onPress={requestCameraPermission}
+                              style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(34,211,238,0.15)', borderWidth: 1, borderColor: 'rgba(34,211,238,0.3)' }}
+                            >
+                              <Text style={{ color: colors.cyan, fontFamily: typography.fontFamily.body, fontSize: typography.size.sm, fontWeight: '600' }}>Allow Camera</Text>
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <View style={{ borderRadius: 16, overflow: 'hidden', width: '100%', height: 220 }}>
+                            <CameraView
+                              style={{ flex: 1 }}
+                              facing="back"
+                              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                              onBarcodeScanned={scanned ? undefined : handleQrScanned}
+                            />
+                            <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                              <View style={{ width: 140, height: 140, borderWidth: 2, borderColor: colors.cyan, borderRadius: 12, opacity: 0.8 }} />
+                            </View>
+                            {scanned && (
+                              <Pressable
+                                onPress={() => setScanned(false)}
+                                style={{ position: 'absolute', bottom: 12, alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.6)' }}
+                              >
+                                <Text style={{ color: '#fff', fontFamily: typography.fontFamily.body, fontSize: 13 }}>Tap to scan again</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                        )}
+                        <Text style={[styles.scanMsg, { marginTop: 10, fontSize: 12 }]}>
+                          Point at the QR code on your device label
+                        </Text>
                       </View>
                     )}
 
@@ -505,16 +557,16 @@ export default function DevicesScreen() {
                 {wizardStep === 'tank' && (
                   <View style={styles.stepContent}>
                     {/* Device confirmation */}
-                    {deviceId ? (
+                    {(deviceId || registrationCode) ? (
                       <GlassSurface style={styles.sensorConfirm}>
                         <View style={styles.sensorConfirmIcon}>
-                          <Ionicons name="hardware-chip-outline" size={15} color={colors.cyan} />
+                          <Ionicons name={registrationCode ? 'qr-code-outline' : 'hardware-chip-outline'} size={15} color={colors.cyan} />
                         </View>
                         <View style={styles.sensorConfirmInfo}>
-                          <Text style={styles.sensorConfirmLabel}>Device identified</Text>
+                          <Text style={styles.sensorConfirmLabel}>{registrationCode ? 'QR code scanned' : 'Device identified'}</Text>
                           <Text style={styles.sensorConfirmId} numberOfLines={1}>
-                            {deviceId}
-                            {activationPin ? <Text style={{ color: colors.textTertiary }}> · PIN {activationPin}</Text> : null}
+                            {registrationCode || deviceId}
+                            {!registrationCode && activationPin ? <Text style={{ color: colors.textTertiary }}> · PIN {activationPin}</Text> : null}
                           </Text>
                         </View>
                       </GlassSurface>

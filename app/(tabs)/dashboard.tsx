@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, Platform,
+  View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,6 +21,7 @@ import {
   TankRecord, AlertRecord, DeviceRecord, TelemetryRecord,
 } from '@/src/lib/api';
 import { colors, radius, spacing, typography } from '@/src/theme/tokens';
+import { useMqttTelemetry } from '@/src/hooks/useMqttTelemetry';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -86,6 +87,45 @@ export default function DashboardScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
+  // ── MQTT live telemetry ──
+  const deviceIds = devices.map(d => d.deviceId);
+  const { telemetry: mqttTelemetry, connected: mqttConnected } = useMqttTelemetry(deviceIds);
+
+  const mqttPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!mqttConnected) return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(mqttPulse, { toValue: 1.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(mqttPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+    return () => mqttPulse.stopAnimation();
+  }, [mqttConnected]);
+
+  useEffect(() => {
+    if (!Object.keys(mqttTelemetry).length) return;
+    setTankData(prev => prev.map(td => {
+      if (!td.device) return td;
+      const live = mqttTelemetry[td.device.deviceId];
+      if (!live) return td;
+      return {
+        ...td,
+        telemetry: {
+          ...(td.telemetry ?? {} as any),
+          waterLevel: live.waterLevel ?? td.telemetry?.waterLevel ?? 0,
+          ph: live.ph ?? td.telemetry?.ph ?? 0,
+          temperature: live.temperature ?? td.telemetry?.temperature ?? 0,
+          battery: live.battery ?? td.telemetry?.battery ?? 0,
+          signal: live.signal ?? td.telemetry?.signal ?? 0,
+          dissolvedOxygen: td.telemetry?.dissolvedOxygen ?? 0,
+          turbidity: td.telemetry?.turbidity ?? 0,
+          timestamp: live.ts.toISOString(),
+        },
+      };
+    }));
+  }, [mqttTelemetry]);
+
   const firstName = user?.name?.split(' ')[0] ?? 'there';
   const unreadAlerts = alerts.filter(a => !a.read);
   const activeDevices = devices.filter(d => d.status === 'active');
@@ -118,6 +158,13 @@ export default function DashboardScreen() {
               <Text style={s.userName}>{firstName} 👋</Text>
             </View>
             <View style={s.headerActions}>
+              {/* MQTT live badge */}
+              <View style={[s.mqttBadge, mqttConnected && s.mqttBadgeLive]}>
+                <Animated.View style={[s.mqttDot, mqttConnected && s.mqttDotLive, { transform: [{ scale: mqttConnected ? mqttPulse : 1 }] }]} />
+                <Text style={[s.mqttText, mqttConnected && s.mqttTextLive]}>
+                  {mqttConnected ? 'LIVE' : 'MQTT'}
+                </Text>
+              </View>
               <IconButton
                 icon="notifications-outline"
                 badge={unreadAlerts.length}
@@ -317,7 +364,34 @@ const s = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
+  },
+  mqttBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  mqttBadgeLive: {
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderColor: 'rgba(34,211,238,0.35)',
+  },
+  mqttDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  mqttDotLive: {
+    backgroundColor: '#22D3EE',
+  },
+  mqttText: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: 10, fontWeight: '700',
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 0.5,
+  },
+  mqttTextLive: {
+    color: '#22D3EE',
   },
   hero: {
     flexDirection: 'row',
