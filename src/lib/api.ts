@@ -121,8 +121,8 @@ export const devicesApi = {
     req<DeviceRecord>('/devices', { method: 'POST', body: JSON.stringify({ deviceName, tankId }) }),
   connect: (deviceId: string, activationPin: string, tankId: string) =>
     req<DeviceRecord>('/devices/connect', { method: 'POST', body: JSON.stringify({ deviceId, activationPin, tankId }) }),
-  claim: (registrationCode: string, tankId: string) =>
-    req<DeviceRecord>('/devices/claim', { method: 'POST', body: JSON.stringify({ registrationCode, tankId }) }),
+  claim: (registrationCode: string, activationPin: string, tankId: string) =>
+    req<DeviceRecord>('/devices/claim', { method: 'POST', body: JSON.stringify({ registrationCode, activationPin, tankId }) }),
   unclaim: (deviceId: string) => req<DeviceRecord>(`/devices/${deviceId}/unclaim`, { method: 'DELETE' }),
 };
 
