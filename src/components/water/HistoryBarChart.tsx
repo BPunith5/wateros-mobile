@@ -54,7 +54,7 @@ function Bar({
       index * 80,
       withTiming(Math.max(0.04, point.value), { duration: 700, easing: Easing.out(Easing.cubic) }),
     );
-  }, []);
+  }, [index, point.value]);
 
   const style = useAnimatedStyle(() => ({
     height: fill.value * trackHeight,

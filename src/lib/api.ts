@@ -208,6 +208,15 @@ export const consoleApi = {
     req<DeviceRecord>(`/superadmin/devices/${deviceMongoId}/decommission`, { method: 'POST' }),
 };
 
+export const systemApi = {
+  getConfig: () => req<{ telemetryProtocol: 'mqtt' | 'http' }>('/system-config'),
+  setProtocol: (p: 'mqtt' | 'http') =>
+    req<{ telemetryProtocol: 'mqtt' | 'http' }>('/system-config', {
+      method: 'PATCH',
+      body: JSON.stringify({ telemetryProtocol: p }),
+    }),
+};
+
 export const complaintsApi = {
   submit: (subject: string, description: string, tankId?: string, deviceMongoId?: string) =>
     req<ComplaintRecord>('/complaints', { method: 'POST', body: JSON.stringify({ subject, description, ...(tankId ? { tankId } : {}), ...(deviceMongoId ? { deviceMongoId } : {}) }) }),

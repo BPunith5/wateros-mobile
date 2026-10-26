@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
 
 const BROKER_URL = 'wss://t611713b.ala.asia-southeast1.emqxsl.com:8084/mqtt';
-const MQTT_USER = 'aquanigha-device';
-const MQTT_PASS = '12345678';
+const MQTT_USER = process.env.EXPO_PUBLIC_MQTT_USER ?? 'aquanigha-device';
+const MQTT_PASS = process.env.EXPO_PUBLIC_MQTT_PASS ?? '12345678';
 
 export interface LiveTelemetry {
   deviceId: string;
@@ -15,14 +15,14 @@ export interface LiveTelemetry {
   ts: Date;
 }
 
-export function useMqttTelemetry(deviceIds: string[]) {
+export function useMqttTelemetry(deviceIds: string[], enabled = true) {
   const [telemetry, setTelemetry] = useState<Record<string, LiveTelemetry>>({});
   const [connected, setConnected] = useState(false);
   const clientRef = useRef<ReturnType<typeof mqtt.connect> | null>(null);
   const idsKey = deviceIds.join(',');
 
   useEffect(() => {
-    if (!deviceIds.length) return;
+    if (!enabled || !deviceIds.length) return;
 
     const client = mqtt.connect(BROKER_URL, {
       username: MQTT_USER,
@@ -59,10 +59,11 @@ export function useMqttTelemetry(deviceIds: string[]) {
     client.on('error', () => setConnected(false));
 
     return () => {
-      client.end();
+      client.removeAllListeners();
+      client.end(true);
       clientRef.current = null;
     };
-  }, [idsKey]);
+  }, [idsKey, enabled]);
 
   return { telemetry, connected };
 }

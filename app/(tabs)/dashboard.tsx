@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Animated,
+  View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Animated, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -39,7 +39,7 @@ interface TankData {
 }
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, telemetryProtocol } = useAuth();
   const router = useRouter();
 
   const [tankData, setTankData] = useState<TankData[]>([]);
@@ -76,7 +76,9 @@ export default function DashboardScreen() {
       );
       setCached('dashboard', combined);
       setTankData(combined);
-    } catch { /* silent */ }
+    } catch {
+      setLoading(false);
+    }
     finally {
       setLoading(false);
       setRefreshing(false);
@@ -87,9 +89,46 @@ export default function DashboardScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  // ── MQTT live telemetry ──
-  const deviceIds = devices.map(d => d.deviceId);
-  const { telemetry: mqttTelemetry, connected: mqttConnected } = useMqttTelemetry(deviceIds);
+  // ── MQTT live telemetry (disabled when HTTP mode is active) ──
+  const mqttEnabled = telemetryProtocol === 'mqtt';
+  const deviceIds = useMemo(() => devices.map(d => d.deviceId), [devices]);
+  const { telemetry: mqttTelemetry, connected: mqttConnected } = useMqttTelemetry(deviceIds, mqttEnabled);
+
+  // ── Fast telemetry-only refresh (HTTP mode: every 3s instead of full reload) ──
+  const tankDataRef = useRef(tankData);
+  tankDataRef.current = tankData;
+
+  const refreshTelemetry = useCallback(async () => {
+    const current = tankDataRef.current;
+    if (!current.length) return;
+    try {
+      const updates = await Promise.all(
+        current.map(async (td) => {
+          if (!td.device) return td;
+          try {
+            const logs = await telemetryApi.logs(td.device.deviceId, 1);
+            if (logs[0]) return { ...td, telemetry: logs[0] };
+          } catch { /* silent */ }
+          return td;
+        })
+      );
+      setTankData(updates);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    if (mqttEnabled) return;
+    const interval = setInterval(refreshTelemetry, 3_000);
+    return () => clearInterval(interval);
+  }, [mqttEnabled, refreshTelemetry]);
+
+  // ── Refresh when app returns to foreground ──
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') load();
+    });
+    return () => sub.remove();
+  }, [load]);
 
   const mqttPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -112,7 +151,7 @@ export default function DashboardScreen() {
       return {
         ...td,
         telemetry: {
-          ...(td.telemetry ?? {} as any),
+          ...td.telemetry,
           waterLevel: live.waterLevel ?? td.telemetry?.waterLevel ?? 0,
           ph: live.ph ?? td.telemetry?.ph ?? 0,
           temperature: live.temperature ?? td.telemetry?.temperature ?? 0,
@@ -121,7 +160,7 @@ export default function DashboardScreen() {
           dissolvedOxygen: td.telemetry?.dissolvedOxygen ?? 0,
           turbidity: td.telemetry?.turbidity ?? 0,
           timestamp: live.ts.toISOString(),
-        },
+        } as TelemetryRecord,
       };
     }));
   }, [mqttTelemetry]);
@@ -158,13 +197,15 @@ export default function DashboardScreen() {
               <Text style={s.userName}>{firstName} 👋</Text>
             </View>
             <View style={s.headerActions}>
-              {/* MQTT live badge */}
-              <View style={[s.mqttBadge, mqttConnected && s.mqttBadgeLive]}>
-                <Animated.View style={[s.mqttDot, mqttConnected && s.mqttDotLive, { transform: [{ scale: mqttConnected ? mqttPulse : 1 }] }]} />
-                <Text style={[s.mqttText, mqttConnected && s.mqttTextLive]}>
-                  {mqttConnected ? 'LIVE' : 'MQTT'}
-                </Text>
-              </View>
+              {/* MQTT live badge — only visible to super admin */}
+              {user?.role === 'superadmin' && mqttEnabled && (
+                <View style={[s.mqttBadge, mqttConnected && s.mqttBadgeLive]}>
+                  <Animated.View style={[s.mqttDot, mqttConnected && s.mqttDotLive, { transform: [{ scale: mqttConnected ? mqttPulse : 1 }] }]} />
+                  <Text style={[s.mqttText, mqttConnected && s.mqttTextLive]}>
+                    {mqttConnected ? 'LIVE' : 'MQTT'}
+                  </Text>
+                </View>
+              )}
               <IconButton
                 icon="notifications-outline"
                 badge={unreadAlerts.length}

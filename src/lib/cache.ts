@@ -22,3 +22,7 @@ export function invalidatePrefix(prefix: string) {
     if (key.startsWith(prefix)) store.delete(key);
   }
 }
+
+export function clearCache(): void {
+  store.clear();
+}

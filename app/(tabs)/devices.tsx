@@ -500,6 +500,9 @@ export default function DevicesScreen() {
                         {scanned && (
                           <View style={[styles.inputGroup, { width: '100%', marginTop: spacing.sm }]}>
                             <Text style={styles.inputLabel}>Activation PIN</Text>
+                            <Text style={{ fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary, marginBottom: spacing.xs }}>
+                              Enter the 6-digit PIN printed on your device label or provided by your administrator.
+                            </Text>
                             <View style={styles.inputRow}>
                               <Ionicons name="keypad-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
                               <TextInput

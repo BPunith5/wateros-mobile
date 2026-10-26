@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { authApi, getToken, setToken, removeToken, type AuthUser } from '@/src/lib/api';
+import { authApi, systemApi, getToken, setToken, removeToken, type AuthUser } from '@/src/lib/api';
+import { clearCache } from '@/src/lib/cache';
 
 type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
+  telemetryProtocol: 'mqtt' | 'http';
+  setTelemetryProtocol: (p: 'mqtt' | 'http') => void;
   login: (email: string) => Promise<void>;
   loginWithToken: (token: string, user: AuthUser) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
@@ -15,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [telemetryProtocol, setTelemetryProtocol] = useState<'mqtt' | 'http'>('mqtt');
 
   useEffect(() => {
     (async () => {
@@ -28,6 +32,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await removeToken();
       } finally {
         setLoading(false);
+        // Fetch system config after auth resolves (public endpoint, always runs)
+        systemApi.getConfig().then(c => setTelemetryProtocol(c.telemetryProtocol)).catch(() => {});
       }
     })();
   }, []);
@@ -48,12 +54,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    clearCache();
     await removeToken();
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithToken, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, telemetryProtocol, setTelemetryProtocol, login, loginWithToken, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

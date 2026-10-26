@@ -63,11 +63,11 @@ export default function TankDetailOverlay({ visible, tank, telemetry, device, on
   const VESSEL_H = Math.round(VESSEL_W * 0.68);
 
   const metrics = [
-    { icon: 'thermometer-outline' as const, value: telemetry ? telemetry.temperature.toFixed(1) : '--', unit: '°C', label: 'Temperature', color: colors.warning },
-    { icon: 'flask-outline' as const, value: telemetry ? telemetry.ph.toFixed(1) : '--', unit: '', label: 'pH Level', color: colors.teal },
-    { icon: 'water-outline' as const, value: telemetry ? (telemetry.dissolvedOxygen * 100).toFixed(0) : '--', unit: '%', label: 'Dissolved O₂', color: colors.cyan },
-    { icon: 'eye-outline' as const, value: telemetry ? telemetry.turbidity.toFixed(1) : '--', unit: 'NTU', label: 'Turbidity', color: colors.seafoam },
-    { icon: 'stats-chart-outline' as const, value: telemetry ? telemetry.tds.toFixed(0) : '--', unit: 'ppm', label: 'TDS', color: colors.info },
+    { icon: 'thermometer-outline' as const, value: telemetry?.temperature?.toFixed(1) ?? '--', unit: '°C', label: 'Temperature', color: colors.warning },
+    { icon: 'flask-outline' as const, value: telemetry?.ph?.toFixed(1) ?? '--', unit: '', label: 'pH Level', color: colors.teal },
+    { icon: 'water-outline' as const, value: telemetry?.dissolvedOxygen != null ? (telemetry.dissolvedOxygen * 100).toFixed(0) : '--', unit: '%', label: 'Dissolved O₂', color: colors.cyan },
+    { icon: 'eye-outline' as const, value: telemetry?.turbidity?.toFixed(1) ?? '--', unit: 'NTU', label: 'Turbidity', color: colors.seafoam },
+    { icon: 'stats-chart-outline' as const, value: telemetry?.tds?.toFixed(0) ?? '--', unit: 'ppm', label: 'TDS', color: colors.info },
     { icon: 'radio-outline' as const, value: device ? `${device.signal}` : '--', unit: '%', label: 'Signal', color: colors.electricBlue },
   ];
 
