@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert,
   useWindowDimensions, Modal, TextInput, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -22,6 +22,8 @@ import {
 } from '@/src/lib/api';
 import { tankTypeMeta } from '@/src/theme/tokens';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
+import { useAuth } from '@/src/context/AuthContext';
+import { useMqttTelemetry } from '@/src/hooks/useMqttTelemetry';
 
 function deviceStatusColor(status: string): string {
   switch (status) {
@@ -108,6 +110,8 @@ export default function TankDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { width: sw } = useWindowDimensions();
+  const { telemetryProtocol } = useAuth();
+  const mqttEnabled = telemetryProtocol === 'mqtt';
   const VESSEL_W = sw - spacing.lg * 2 - 32;
   const VESSEL_H = Math.round(VESSEL_W * 0.72);
 
@@ -155,6 +159,52 @@ export default function TankDetailScreen() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── MQTT live updates ──────────────────────────────────────────────────────
+  const deviceIdList = useMemo(() => device ? [device.deviceId] : [], [device]);
+  const { telemetry: mqttTelemetry } = useMqttTelemetry(deviceIdList, mqttEnabled);
+
+  useEffect(() => {
+    if (!device || !Object.keys(mqttTelemetry).length) return;
+    const live = mqttTelemetry[device.deviceId];
+    if (!live) return;
+    setTelemetry(prev => prev ? {
+      ...prev,
+      waterLevel:  live.waterLevel  ?? prev.waterLevel,
+      ph:          live.ph          ?? prev.ph,
+      temperature: live.temperature ?? prev.temperature,
+      battery:     live.battery     ?? prev.battery,
+      signal:      live.signal      ?? prev.signal,
+      timestamp:   live.ts.toISOString(),
+    } : prev);
+  }, [mqttTelemetry, device]);
+
+  // ── Fast HTTP telemetry poll (3s when MQTT disabled) ──────────────────────
+  const deviceRef = useRef(device);
+  deviceRef.current = device;
+
+  const refreshTelemetry = useCallback(async () => {
+    if (!deviceRef.current) return;
+    try {
+      const logs = await telemetryApi.logs(deviceRef.current.deviceId, 20);
+      if (logs[0]) {
+        setTelemetry(logs[0]);
+        setTelemetryHistory(logs);
+      }
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    if (mqttEnabled) return;
+    const interval = setInterval(refreshTelemetry, 3_000);
+    return () => clearInterval(interval);
+  }, [mqttEnabled, refreshTelemetry]);
+
+  // ── Refresh on foreground ──────────────────────────────────────────────────
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', s => { if (s === 'active') load(); });
+    return () => sub.remove();
+  }, [load]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -230,13 +280,13 @@ export default function TankDetailScreen() {
   const currentVolume = tank ? Math.round(fillPct * tank.capacity) : 0;
 
   const tankHealthScore = telemetry
-    ? Math.round((telemetry.waterLevel * 0.4 + telemetry.ph / 14 * 0.6) * 100)
+    ? Math.round(((telemetry.waterLevel ?? 0) * 0.4 + (telemetry.ph ?? 7) / 14 * 0.6) * 100)
     : null;
   const waterQualityScore = telemetry
     ? Math.round((
-        telemetry.dissolvedOxygen * 0.4 +
-        (1 - Math.min(telemetry.turbidity / 10, 1)) * 0.3 +
-        (1 - Math.abs(telemetry.ph - 7.0) / 3.5) * 0.3
+        (telemetry.dissolvedOxygen ?? 0) * 0.4 +
+        (1 - Math.min((telemetry.turbidity ?? 0) / 10, 1)) * 0.3 +
+        (1 - Math.abs((telemetry.ph ?? 7) - 7.0) / 3.5) * 0.3
       ) * 100)
     : null;
   const sensorHealthScore = device ? device.healthScore : null;
@@ -566,9 +616,9 @@ export default function TankDetailScreen() {
 
 const issueStyles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: '#0a1628',
+    backgroundColor: '#080f1e',
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     borderWidth: 1,

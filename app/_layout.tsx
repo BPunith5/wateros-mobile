@@ -8,6 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { colors } from '@/src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -33,7 +34,7 @@ function NavigationGuard() {
     if (loading) return;
 
     // While the splash is on screen, do nothing.
-    if (segments.length === 0 || segments[0] === 'index') return;
+    if ((segments as string[]).length === 0) return;
 
     const inAuth = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
@@ -73,23 +74,25 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.abyss }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <NavigationGuard />
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.abyss } }}>
-            <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="(admin)" />
-            <Stack.Screen name="(console)" />
-            <Stack.Screen name="tank/[id]" />
-            <Stack.Screen name="tank/add" />
-            <Stack.Screen name="admin/device/[id]" />
-            <Stack.Screen name="console/device/[id]" />
-            <Stack.Screen name="console/create-admin" />
-            <Stack.Screen name="console/sensor-assign/[id]" />
-          </Stack>
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <NavigationGuard />
+            <StatusBar style="light" />
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.abyss } }}>
+              <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="(admin)" />
+              <Stack.Screen name="(console)" />
+              <Stack.Screen name="tank/[id]" />
+              <Stack.Screen name="tank/add" />
+              <Stack.Screen name="admin/device/[id]" />
+              <Stack.Screen name="console/device/[id]" />
+              <Stack.Screen name="console/create-admin" />
+              <Stack.Screen name="console/sensor-assign/[id]" />
+            </Stack>
+          </AuthProvider>
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

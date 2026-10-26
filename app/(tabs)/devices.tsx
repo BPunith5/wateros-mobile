@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Modal, TextInput, Pressable,
-  Image, Platform, ScrollView, RefreshControl, KeyboardAvoidingView,
+  Platform, ScrollView, RefreshControl, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import LiquidButton from '@/src/components/glass/LiquidButton';
@@ -14,11 +14,12 @@ import StatusPill from '@/src/components/glass/StatusPill';
 import FilterPill from '@/src/components/glass/FilterPill';
 import StatCard from '@/src/components/glass/StatCard';
 import { devicesApi, tanksApi, telemetryApi, DeviceRecord, TankRecord, TankType } from '@/src/lib/api';
+import { getCached, setCached } from '@/src/lib/cache';
 import { tankTypeMeta } from '@/src/theme/tokens';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
 
 // ─── wizard step types ───────────────────────────────────────────────────────
-type WizardStep = 'identify' | 'provision' | 'provisioned' | 'tank';
+type WizardStep = 'identify' | 'tank';
 type IdentifyTab = 'code' | 'scan';
 type TankMode = 'existing' | 'new';
 
@@ -32,37 +33,6 @@ function statusColor(status: string): string {
     default: return colors.textTertiary;
   }
 }
-
-// ─── Copy row component ──────────────────────────────────────────────────────
-function CredRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await Clipboard.setStringAsync(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <GlassSurface style={credStyles.row}>
-      <View style={credStyles.info}>
-        <Text style={credStyles.label}>{label}</Text>
-        <Text style={credStyles.value} numberOfLines={1}>{value}</Text>
-      </View>
-      <Pressable onPress={copy} hitSlop={8}>
-        <Ionicons
-          name={copied ? 'checkmark-circle' : 'copy-outline'}
-          size={18}
-          color={copied ? colors.success : colors.textTertiary}
-        />
-      </Pressable>
-    </GlassSurface>
-  );
-}
-const credStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
-  info: { flex: 1 },
-  label: { fontFamily: typography.fontFamily.body, fontSize: 10, color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8 },
-  value: { fontFamily: typography.fontFamily.bodySemiBold, fontSize: typography.size.sm, color: colors.textPrimary, marginTop: 2 },
-});
 
 // ─── Device Details Modal ────────────────────────────────────────────────────
 function DeviceDetailsModal({
@@ -137,7 +107,7 @@ function DeviceDetailsModal({
 }
 const detailStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  sheet: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, backgroundColor: '#080f1e' },
   handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.glassBorder, alignSelf: 'center', marginBottom: spacing.xs },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   title: { fontFamily: typography.fontFamily.headingBold, fontSize: typography.size.lg, color: colors.textPrimary },
@@ -167,17 +137,15 @@ export default function DevicesScreen() {
   // Wizard state
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>('identify');
-  const [identifyTab, setIdentifyTab] = useState<IdentifyTab>('code');
+  const [identifyTab, setIdentifyTab] = useState<IdentifyTab>('scan');
 
   // Step 1 state
-  const [deviceId, setDeviceId] = useState('');
+  const [registrationCode, setRegistrationCode] = useState('');
+  const [typedCode, setTypedCode] = useState('');
   const [activationPin, setActivationPin] = useState('');
-  const [identifyError, setIdentifyError] = useState('');
-
-  // Provision state
-  const [provisionName, setProvisionName] = useState('');
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionedDevice, setProvisionedDevice] = useState<DeviceRecord | null>(null);
+  const [codeError, setCodeError] = useState('');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
 
   // Tank step state
   const [tankMode, setTankMode] = useState<TankMode>('existing');
@@ -190,12 +158,14 @@ export default function DevicesScreen() {
   const [connectError, setConnectError] = useState('');
 
   const load = useCallback(async () => {
+    const cached = getCached<{ devices: DeviceRecord[]; tanks: TankRecord[]; gps: Record<string, boolean> }>('user-devices');
+    if (cached) { setDevices(cached.devices); setTanks(cached.tanks); setGpsMap(cached.gps); setLoading(false); if (cached.tanks.length > 0) setConnectTankId(cached.tanks[0]._id); }
+
     try {
       const [d, t] = await Promise.all([devicesApi.list(), tanksApi.list()]);
       setDevices(d);
       setTanks(t);
       if (t.length > 0) setConnectTankId(t[0]._id);
-      // Async GPS check for active devices
       const gps: Record<string, boolean> = {};
       await Promise.all(
         d.filter(dev => dev.status === 'active').map(async dev => {
@@ -208,6 +178,7 @@ export default function DevicesScreen() {
         })
       );
       setGpsMap(gps);
+      setCached('user-devices', { devices: d, tanks: t, gps });
     } catch {
       // silent
     } finally {
@@ -227,13 +198,12 @@ export default function DevicesScreen() {
   const openWizard = () => {
     setShowWizard(true);
     setWizardStep('identify');
-    setIdentifyTab('code');
-    setDeviceId('');
+    setIdentifyTab('scan');
+    setRegistrationCode('');
+    setTypedCode('');
     setActivationPin('');
-
-    setIdentifyError('');
-    setProvisionName('');
-    setProvisionedDevice(null);
+    setCodeError('');
+    setScanned(false);
     setConnectTankId(tanks.length > 0 ? tanks[0]._id : '');
     setTankMode(tanks.length > 0 ? 'existing' : 'new');
     setNewTankName('');
@@ -243,39 +213,15 @@ export default function DevicesScreen() {
     setConnectError('');
   };
 
-
-  // ── Manual code submit ──
-  const handleCodeSubmit = () => {
-    if (!deviceId.trim() || !activationPin.trim()) {
-      setIdentifyError('Enter both the Device ID and PIN printed on your device.');
-      return;
-    }
-    setIdentifyError('');
-    setWizardStep('tank');
+  // ── QR scan handler ──
+  const handleQrScanned = ({ data }: { data: string }) => {
+    if (scanned) return;
+    setScanned(true);
+    setRegistrationCode(data.trim());
+    // Stay on identify step — user still needs to enter PIN
   };
 
-  // ── Provision new sensor ──
-  const handleProvision = async () => {
-    if (!provisionName.trim()) {
-      setIdentifyError('Enter a device name.');
-      return;
-    }
-    setProvisioning(true);
-    setIdentifyError('');
-    try {
-      const device = await devicesApi.register(provisionName.trim());
-      setProvisionedDevice(device);
-      setDeviceId(device.deviceId);
-      setActivationPin(device.activationPin ?? '');
-      setWizardStep('provisioned');
-    } catch (e: any) {
-      setIdentifyError(e.message ?? 'Registration failed.');
-    } finally {
-      setProvisioning(false);
-    }
-  };
-
-  // ── Connect sensor to tank ──
+  // ── Connect device to tank ──
   const handleConnect = async () => {
     setConnectError('');
     let resolvedTankId = connectTankId;
@@ -309,8 +255,10 @@ export default function DevicesScreen() {
     }
 
     try {
-      const device = await devicesApi.connect(deviceId.trim().toUpperCase(), activationPin.trim(), resolvedTankId);
+      const device = await devicesApi.claim(registrationCode.trim(), activationPin.trim(), resolvedTankId);
       setShowWizard(false);
+      setRegistrationCode('');
+      setScanned(false);
       load();
       if (device.tankId) {
         router.push(`/tank/${device.tankId}` as any);
@@ -323,8 +271,6 @@ export default function DevicesScreen() {
 
   const goBack = () => {
     if (wizardStep === 'tank') setWizardStep('identify');
-    else if (wizardStep === 'provisioned') setWizardStep('provision');
-    else if (wizardStep === 'provision') setWizardStep('identify');
     else setShowWizard(false);
   };
 
@@ -340,11 +286,7 @@ export default function DevicesScreen() {
     return tanks.find(t => t._id === tankId)?.tankName ?? null;
   }
 
-  const wizardTitle =
-    wizardStep === 'provision' ? 'Set Up New Device'
-    : wizardStep === 'provisioned' ? 'Device Ready'
-    : wizardStep === 'tank' ? 'Set Up Tank'
-    : 'Connect Device';
+  const wizardTitle = wizardStep === 'tank' ? 'Set Up Tank' : 'Connect Device';
 
   const renderDevice = ({ item }: { item: DeviceRecord }) => {
     const tName = tankName(item.tankId);
@@ -478,7 +420,7 @@ export default function DevicesScreen() {
               {/* Step bar */}
               <View style={styles.stepBar}>
                 {[1, 2].map(n => {
-                  const current = (wizardStep === 'identify' || wizardStep === 'provision' || wizardStep === 'provisioned') ? 1 : 2;
+                  const current = wizardStep === 'identify' ? 1 : 2;
                   const active = n <= current;
                   const done = n < current;
                   return (
@@ -504,28 +446,111 @@ export default function DevicesScreen() {
                 {wizardStep === 'identify' && (
                   <View style={styles.stepContent}>
                     <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>How do you want to add a device?</Text>
-                      <Text style={styles.infoBannerSub}>Scan the QR on your device, type its code, or register a new device.</Text>
+                      <Text style={styles.infoBannerTitle}>Register your device</Text>
+                      <Text style={styles.infoBannerSub}>Scan the QR code provided by your administrator, or type the 16-digit registration code printed on it.</Text>
                     </GlassSurface>
 
                     <View style={styles.tabRow}>
-                      <FilterPill label="Enter Code" active={identifyTab === 'code'} onPress={() => setIdentifyTab('code')} />
                       <FilterPill label="Scan QR" active={identifyTab === 'scan'} onPress={() => setIdentifyTab('scan')} />
+                      <FilterPill label="Enter Code" active={identifyTab === 'code'} onPress={() => { setIdentifyTab('code'); setCodeError(''); }} />
                     </View>
 
-                    {identifyTab === 'code' ? (
+                    {identifyTab === 'scan' ? (
+                      <View style={styles.scanSection}>
+                        {!cameraPermission?.granted ? (
+                          <View style={styles.scanMsgWrap}>
+                            <Ionicons name="camera-outline" size={40} color={colors.textSecondary} />
+                            <Text style={styles.scanMsg}>Camera access needed to scan QR codes.</Text>
+                            <Pressable
+                              onPress={requestCameraPermission}
+                              style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(34,211,238,0.15)', borderWidth: 1, borderColor: 'rgba(34,211,238,0.3)' }}
+                            >
+                              <Text style={{ color: colors.cyan, fontFamily: typography.fontFamily.body, fontSize: typography.size.sm, fontWeight: '600' }}>Allow Camera</Text>
+                            </Pressable>
+                          </View>
+                        ) : scanned ? (
+                          <GlassSurface style={{ padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, width: '100%' }}>
+                            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontFamily: typography.fontFamily.bodyMedium, fontSize: typography.size.xs, color: colors.success }}>QR code scanned</Text>
+                              <Text style={{ fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary }} numberOfLines={1}>{registrationCode}</Text>
+                            </View>
+                            <Pressable onPress={() => { setScanned(false); setRegistrationCode(''); setActivationPin(''); }}>
+                              <Ionicons name="refresh-outline" size={18} color={colors.textTertiary} />
+                            </Pressable>
+                          </GlassSurface>
+                        ) : (
+                          <View style={{ borderRadius: 16, overflow: 'hidden', width: '100%', height: 240 }}>
+                            <CameraView
+                              style={{ flex: 1 }}
+                              facing="back"
+                              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                              onBarcodeScanned={handleQrScanned}
+                            />
+                            <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                              <View style={{ width: 160, height: 160, borderWidth: 2, borderColor: colors.cyan, borderRadius: 12, opacity: 0.8 }} />
+                            </View>
+                          </View>
+                        )}
+                        {!scanned && (
+                          <Text style={[styles.scanMsg, { marginTop: 10, fontSize: 12 }]}>
+                            Point at the QR code provided by your administrator
+                          </Text>
+                        )}
+                        {scanned && (
+                          <View style={[styles.inputGroup, { width: '100%', marginTop: spacing.sm }]}>
+                            <Text style={styles.inputLabel}>Activation PIN</Text>
+                            <Text style={{ fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary, marginBottom: spacing.xs }}>
+                              Enter the 6-digit PIN printed on your device label or provided by your administrator.
+                            </Text>
+                            <View style={styles.inputRow}>
+                              <Ionicons name="keypad-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
+                              <TextInput
+                                style={styles.textInput}
+                                placeholder="PIN printed on device label"
+                                placeholderTextColor={colors.textTertiary}
+                                value={activationPin}
+                                onChangeText={v => { setActivationPin(v); setCodeError(''); }}
+                                selectionColor={colors.cyan}
+                                keyboardType="default"
+                                autoCorrect={false}
+                              />
+                            </View>
+                            {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
+                            <LiquidButton
+                              label="Continue to Tank Setup"
+                              onPress={async () => {
+                                if (!activationPin.trim()) { setCodeError('Enter the activation PIN from the device label.'); return; }
+                                setCodeError('Verifying…');
+                                try {
+                                  await devicesApi.verifyClaim(registrationCode, activationPin.trim());
+                                  setCodeError('');
+                                  setWizardStep('tank');
+                                } catch (e: any) {
+                                  setCodeError(e.message ?? 'Invalid code or PIN.');
+                                }
+                              }}
+                              fullWidth
+                              disabled={!activationPin.trim()}
+                              style={styles.primaryBtn}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    ) : (
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Device ID</Text>
+                        <Text style={styles.inputLabel}>Registration Code</Text>
                         <View style={styles.inputRow}>
                           <Ionicons name="scan-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
                           <TextInput
                             style={styles.textInput}
-                            placeholder="e.g. WTR-XXXXXXXXXXXXXXXX"
+                            placeholder="XXXX-XXXX-XXXX-XXXX"
                             placeholderTextColor={colors.textTertiary}
-                            value={deviceId}
-                            onChangeText={t => setDeviceId(t.toUpperCase())}
+                            value={typedCode}
+                            onChangeText={v => { setTypedCode(v.toUpperCase()); setCodeError(''); }}
                             selectionColor={colors.cyan}
                             autoCapitalize="characters"
+                            autoCorrect={false}
                           />
                         </View>
                         <Text style={styles.inputLabel}>Activation PIN</Text>
@@ -533,113 +558,41 @@ export default function DevicesScreen() {
                           <Ionicons name="keypad-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
                           <TextInput
                             style={styles.textInput}
-                            placeholder="6-digit PIN on device label"
+                            placeholder="PIN printed on device label"
                             placeholderTextColor={colors.textTertiary}
                             value={activationPin}
-                            onChangeText={setActivationPin}
+                            onChangeText={v => { setActivationPin(v); setCodeError(''); }}
                             selectionColor={colors.cyan}
-                            keyboardType="number-pad"
+                            keyboardType="default"
+                            autoCorrect={false}
                           />
                         </View>
-                        {identifyError ? <Text style={styles.errorText}>{identifyError}</Text> : null}
+                        <Text style={[styles.infoBannerSub, { marginTop: -4 }]}>
+                          Both printed on the device label provided by your administrator.
+                        </Text>
+                        {codeError ? <Text style={styles.errorText}>{codeError}</Text> : null}
                         <LiquidButton
                           label="Continue to Tank Setup"
-                          onPress={handleCodeSubmit}
+                          onPress={async () => {
+                            const raw = typedCode.replace(/-/g, '');
+                            if (raw.length !== 16) { setCodeError('Enter the full 16-character registration code.'); return; }
+                            if (!activationPin.trim()) { setCodeError('Enter the activation PIN from the device label.'); return; }
+                            setCodeError('Verifying…');
+                            try {
+                              await devicesApi.verifyClaim(typedCode.trim(), activationPin.trim());
+                              setRegistrationCode(typedCode.trim());
+                              setCodeError('');
+                              setWizardStep('tank');
+                            } catch (e: any) {
+                              setCodeError(e.message ?? 'Invalid code or PIN.');
+                            }
+                          }}
                           fullWidth
-                          disabled={!deviceId.trim() || !activationPin.trim()}
+                          disabled={typedCode.replace(/-/g, '').length < 16 || !activationPin.trim()}
                           style={styles.primaryBtn}
                         />
                       </View>
-                    ) : (
-                      <View style={styles.scanSection}>
-                        <View style={styles.scanMsgWrap}>
-                          <Ionicons name="qr-code-outline" size={40} color={colors.textSecondary} />
-                          <Text style={styles.scanMsg}>QR scanning not available.</Text>
-                          <Text style={[styles.scanMsg, { fontSize: 13, marginTop: 4 }]}>Use the Code tab to enter your Device ID and PIN manually.</Text>
-                        </View>
-                      </View>
                     )}
-
-                    <View style={styles.orRow}>
-                      <View style={styles.orLine} />
-                      <Text style={styles.orText}>or</Text>
-                      <View style={styles.orLine} />
-                    </View>
-
-                    <LiquidButton
-                      label="Set Up New Device"
-                      onPress={() => { setIdentifyError(''); setWizardStep('provision'); }}
-                      variant="ghost"
-                      fullWidth
-                      icon="add-circle-outline"
-                    />
-                  </View>
-                )}
-
-                {/* ── provision ── */}
-                {wizardStep === 'provision' && (
-                  <View style={styles.stepContent}>
-                    <GlassSurface style={styles.infoBanner}>
-                      <Text style={styles.infoBannerTitle}>Provision a new device</Text>
-                      <Text style={styles.infoBannerSub}>Give your device a name. You'll get a unique Device ID, PIN and QR code.</Text>
-                    </GlassSurface>
-                    <Text style={styles.inputLabel}>Device Name</Text>
-                    <View style={styles.inputRow}>
-                      <Ionicons name="hardware-chip-outline" size={17} color={colors.textTertiary} style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.textInput}
-                        placeholder="e.g. Rooftop Tank Device"
-                        placeholderTextColor={colors.textTertiary}
-                        value={provisionName}
-                        onChangeText={setProvisionName}
-                        selectionColor={colors.cyan}
-                        autoFocus
-                      />
-                    </View>
-                    {identifyError ? <Text style={styles.errorText}>{identifyError}</Text> : null}
-                    <LiquidButton
-                      label="Register Device"
-                      onPress={handleProvision}
-                      loading={provisioning}
-                      fullWidth
-                      disabled={!provisionName.trim()}
-                      style={styles.primaryBtn}
-                    />
-                  </View>
-                )}
-
-                {/* ── provisioned ── */}
-                {wizardStep === 'provisioned' && provisionedDevice && (
-                  <View style={styles.stepContent}>
-                    <GlassSurface style={styles.successBanner}>
-                      <View style={styles.successIcon}>
-                        <Ionicons name="checkmark" size={18} color={colors.success} />
-                      </View>
-                      <Text style={styles.successTitle}>{provisionedDevice.deviceName} registered</Text>
-                      <Text style={styles.successSub}>Save these credentials — they're used to program the physical device.</Text>
-                      {provisionedDevice.qrCode && (
-                        <Image source={{ uri: provisionedDevice.qrCode }} style={styles.qrImage} resizeMode="contain" />
-                      )}
-                    </GlassSurface>
-
-                    <View style={styles.credList}>
-                      <CredRow label="Device ID" value={provisionedDevice.deviceId} />
-                      <View style={styles.credDivider} />
-                      <CredRow label="Activation PIN" value={provisionedDevice.activationPin ?? ''} />
-                      {provisionedDevice.secretKey && (
-                        <>
-                          <View style={styles.credDivider} />
-                          <CredRow label="Secret Key" value={provisionedDevice.secretKey} />
-                        </>
-                      )}
-                    </View>
-
-                    <LiquidButton
-                      label="Continue to Tank Setup →"
-                      onPress={() => setWizardStep('tank')}
-                      fullWidth
-                      style={styles.primaryBtn}
-                    />
                   </View>
                 )}
 
@@ -647,17 +600,14 @@ export default function DevicesScreen() {
                 {wizardStep === 'tank' && (
                   <View style={styles.stepContent}>
                     {/* Device confirmation */}
-                    {deviceId ? (
+                    {registrationCode ? (
                       <GlassSurface style={styles.sensorConfirm}>
                         <View style={styles.sensorConfirmIcon}>
-                          <Ionicons name="hardware-chip-outline" size={15} color={colors.cyan} />
+                          <Ionicons name="qr-code-outline" size={15} color={colors.cyan} />
                         </View>
                         <View style={styles.sensorConfirmInfo}>
-                          <Text style={styles.sensorConfirmLabel}>Device identified</Text>
-                          <Text style={styles.sensorConfirmId} numberOfLines={1}>
-                            {deviceId}
-                            {activationPin ? <Text style={{ color: colors.textTertiary }}> · PIN {activationPin}</Text> : null}
-                          </Text>
+                          <Text style={styles.sensorConfirmLabel}>QR code scanned</Text>
+                          <Text style={styles.sensorConfirmId} numberOfLines={1}>{registrationCode}</Text>
                         </View>
                       </GlassSurface>
                     ) : null}
@@ -747,8 +697,7 @@ export default function DevicesScreen() {
                       loading={connecting}
                       fullWidth
                       disabled={connecting
-                        || !deviceId.trim()
-                        || !activationPin.trim()
+                        || !registrationCode.trim()
                         || (tankMode === 'existing' && !connectTankId)
                         || (tankMode === 'new' && (!newTankName.trim() || !newTankCapacity.trim()))}
                       style={styles.primaryBtn}
@@ -802,7 +751,7 @@ const styles = StyleSheet.create({
   // Wizard overlay
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: { maxHeight: '92%' },
-  wizardContent: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xl, maxHeight: '100%', backgroundColor: 'rgba(3, 20, 46, 0.97)' },
+  wizardContent: { borderRadius: radius.xl, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: spacing.lg, paddingBottom: spacing.xl, maxHeight: '100%', backgroundColor: '#080f1e' },
   wizardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.glassBorder, alignSelf: 'center', marginBottom: spacing.sm },
   wizardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   wizardBack: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.glassFill, borderWidth: 1, borderColor: colors.glassBorder, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
@@ -826,7 +775,7 @@ const styles = StyleSheet.create({
   tabRow: { flexDirection: 'row', gap: spacing.sm },
   inputGroup: { gap: spacing.sm },
   inputLabel: { fontFamily: typography.fontFamily.bodyMedium, fontSize: typography.size.sm, color: colors.textSecondary, marginBottom: 2 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: colors.glassBorder, borderRadius: radius.md, height: 50, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', borderRadius: radius.md, height: 50, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
   inputIcon: { marginRight: 10 },
   textInput: { flex: 1, fontFamily: typography.fontFamily.body, fontSize: typography.size.base, color: colors.textPrimary, height: '100%' },
   errorText: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.danger },
@@ -843,20 +792,6 @@ const styles = StyleSheet.create({
   cornerTR: { top: 16, right: 16, borderTopWidth: 3, borderRightWidth: 3, borderRadius: 2 },
   cornerBL: { bottom: 16, left: 16, borderBottomWidth: 3, borderLeftWidth: 3, borderRadius: 2 },
   cornerBR: { bottom: 16, right: 16, borderBottomWidth: 3, borderRightWidth: 3, borderRadius: 2 },
-
-  // Or divider
-  orRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  orLine: { flex: 1, height: 1, backgroundColor: colors.glassBorder },
-  orText: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary },
-
-  // Provisioned
-  successBanner: { padding: spacing.lg, alignItems: 'center', gap: spacing.sm },
-  successIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: `${colors.success}22`, borderWidth: 1, borderColor: `${colors.success}55`, alignItems: 'center', justifyContent: 'center' },
-  successTitle: { fontFamily: typography.fontFamily.heading, fontSize: typography.size.base, color: colors.textPrimary },
-  successSub: { fontFamily: typography.fontFamily.body, fontSize: typography.size.xs, color: colors.textTertiary, textAlign: 'center' },
-  qrImage: { width: 150, height: 150, borderRadius: radius.sm, backgroundColor: '#fff', marginTop: spacing.sm },
-  credList: { borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.glassBorder },
-  credDivider: { height: 1, backgroundColor: colors.glassBorder },
 
   // Tank step
   sensorConfirm: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },

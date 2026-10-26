@@ -23,9 +23,8 @@ function timeAgo(dateStr: string): string {
 }
 
 function getTankName(alert: AlertRecord): string | null {
-  if (!alert.tankId) return null;
-  if (typeof alert.tankId === 'string') return null;
-  return (alert.tankId as any).tankName ?? null;
+  if (!alert.tankId || typeof alert.tankId !== 'object') return null;
+  return (alert.tankId as { tankName?: string }).tankName ?? null;
 }
 
 type Props = {

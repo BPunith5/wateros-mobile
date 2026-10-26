@@ -30,7 +30,9 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "./config-plugins/abi-filter"
+      "./config-plugins/abi-filter",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
@@ -41,6 +43,12 @@
         "projectId": "05c1ea03-f811-4803-8006-9b7d5f055d1b"
       }
     },
-    "owner": "bpunith5s-team"
+    "owner": "bpunith5s-team",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/05c1ea03-f811-4803-8006-9b7d5f055d1b"
+    }
   }
 }

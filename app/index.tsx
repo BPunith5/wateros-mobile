@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   dark: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.abyss,
   },
   oceanPanel: {

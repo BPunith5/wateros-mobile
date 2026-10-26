@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, Platform,
+  View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Animated, AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { getCached, setCached } from '@/src/lib/cache';
 import OceanBackground from '@/src/components/water/OceanBackground';
 import GlassSurface from '@/src/components/glass/GlassSurface';
 import SectionHeader from '@/src/components/glass/SectionHeader';
@@ -20,6 +21,7 @@ import {
   TankRecord, AlertRecord, DeviceRecord, TelemetryRecord,
 } from '@/src/lib/api';
 import { colors, radius, spacing, typography } from '@/src/theme/tokens';
+import { useMqttTelemetry } from '@/src/hooks/useMqttTelemetry';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -37,7 +39,7 @@ interface TankData {
 }
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, telemetryProtocol } = useAuth();
   const router = useRouter();
 
   const [tankData, setTankData] = useState<TankData[]>([]);
@@ -47,6 +49,9 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
+    const cached = getCached<TankData[]>('dashboard');
+    if (cached) { setTankData(cached); setLoading(false); }
+
     try {
       const [tanks, alts, devs] = await Promise.all([
         tanksApi.list(),
@@ -69,8 +74,11 @@ export default function DashboardScreen() {
           return { tank, telemetry, device };
         })
       );
+      setCached('dashboard', combined);
       setTankData(combined);
-    } catch { /* silent */ }
+    } catch {
+      setLoading(false);
+    }
     finally {
       setLoading(false);
       setRefreshing(false);
@@ -80,6 +88,82 @@ export default function DashboardScreen() {
   useEffect(() => { load(); }, [load]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  // ── MQTT live telemetry (disabled when HTTP mode is active) ──
+  const mqttEnabled = telemetryProtocol === 'mqtt';
+  const deviceIds = useMemo(() => devices.map(d => d.deviceId), [devices]);
+  const { telemetry: mqttTelemetry, connected: mqttConnected } = useMqttTelemetry(deviceIds, mqttEnabled);
+
+  // ── Fast telemetry-only refresh (HTTP mode: every 3s instead of full reload) ──
+  const tankDataRef = useRef(tankData);
+  tankDataRef.current = tankData;
+
+  const refreshTelemetry = useCallback(async () => {
+    const current = tankDataRef.current;
+    if (!current.length) return;
+    try {
+      const updates = await Promise.all(
+        current.map(async (td) => {
+          if (!td.device) return td;
+          try {
+            const logs = await telemetryApi.logs(td.device.deviceId, 1);
+            if (logs[0]) return { ...td, telemetry: logs[0] };
+          } catch { /* silent */ }
+          return td;
+        })
+      );
+      setTankData(updates);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    if (mqttEnabled) return;
+    const interval = setInterval(refreshTelemetry, 3_000);
+    return () => clearInterval(interval);
+  }, [mqttEnabled, refreshTelemetry]);
+
+  // ── Refresh when app returns to foreground ──
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') load();
+    });
+    return () => sub.remove();
+  }, [load]);
+
+  const mqttPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!mqttConnected) return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(mqttPulse, { toValue: 1.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(mqttPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+    return () => mqttPulse.stopAnimation();
+  }, [mqttConnected]);
+
+  useEffect(() => {
+    if (!Object.keys(mqttTelemetry).length) return;
+    setTankData(prev => prev.map(td => {
+      if (!td.device) return td;
+      const live = mqttTelemetry[td.device.deviceId];
+      if (!live) return td;
+      return {
+        ...td,
+        telemetry: {
+          ...td.telemetry,
+          waterLevel: live.waterLevel ?? td.telemetry?.waterLevel ?? 0,
+          ph: live.ph ?? td.telemetry?.ph ?? 0,
+          temperature: live.temperature ?? td.telemetry?.temperature ?? 0,
+          battery: live.battery ?? td.telemetry?.battery ?? 0,
+          signal: live.signal ?? td.telemetry?.signal ?? 0,
+          dissolvedOxygen: td.telemetry?.dissolvedOxygen ?? 0,
+          turbidity: td.telemetry?.turbidity ?? 0,
+          timestamp: live.ts.toISOString(),
+        } as TelemetryRecord,
+      };
+    }));
+  }, [mqttTelemetry]);
 
   const firstName = user?.name?.split(' ')[0] ?? 'there';
   const unreadAlerts = alerts.filter(a => !a.read);
@@ -113,6 +197,15 @@ export default function DashboardScreen() {
               <Text style={s.userName}>{firstName} 👋</Text>
             </View>
             <View style={s.headerActions}>
+              {/* MQTT live badge — only visible to super admin */}
+              {user?.role === 'superadmin' && mqttEnabled && (
+                <View style={[s.mqttBadge, mqttConnected && s.mqttBadgeLive]}>
+                  <Animated.View style={[s.mqttDot, mqttConnected && s.mqttDotLive, { transform: [{ scale: mqttConnected ? mqttPulse : 1 }] }]} />
+                  <Text style={[s.mqttText, mqttConnected && s.mqttTextLive]}>
+                    {mqttConnected ? 'LIVE' : 'MQTT'}
+                  </Text>
+                </View>
+              )}
               <IconButton
                 icon="notifications-outline"
                 badge={unreadAlerts.length}
@@ -312,7 +405,34 @@ const s = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
+  },
+  mqttBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  mqttBadgeLive: {
+    backgroundColor: 'rgba(34,211,238,0.12)',
+    borderColor: 'rgba(34,211,238,0.35)',
+  },
+  mqttDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  mqttDotLive: {
+    backgroundColor: '#22D3EE',
+  },
+  mqttText: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: 10, fontWeight: '700',
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 0.5,
+  },
+  mqttTextLive: {
+    color: '#22D3EE',
   },
   hero: {
     flexDirection: 'row',

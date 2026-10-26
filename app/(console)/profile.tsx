@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Alert, Platform, ScrollView,
+  View, Text, StyleSheet, Alert, Platform, ScrollView, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import OceanBackground from '@/src/components/water/OceanBackground';
@@ -9,18 +9,41 @@ import LiquidButton from '@/src/components/glass/LiquidButton';
 import MenuRow from '@/src/components/glass/MenuRow';
 import StatusPill from '@/src/components/glass/StatusPill';
 import { useAuth } from '@/src/context/AuthContext';
+import { systemApi } from '@/src/lib/api';
 import { colors, spacing, typography, radius } from '@/src/theme/tokens';
 
 const APP_VERSION = '1.0.0';
 
 export default function ConsoleProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, telemetryProtocol, setTelemetryProtocol } = useAuth();
+  const [protocol, setProtocol] = useState<'mqtt' | 'http'>(telemetryProtocol);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setProtocol(telemetryProtocol);
+  }, [telemetryProtocol]);
 
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
     : '?';
 
   const tabBarHeight = Platform.OS === 'ios' ? 120 : 100;
+
+  async function handleProtocolToggle(val: boolean) {
+    const next: 'mqtt' | 'http' = val ? 'mqtt' : 'http';
+    const prev = protocol; // save current state
+    setProtocol(next);     // optimistic update
+    setSaving(true);
+    try {
+      await systemApi.setProtocol(next);
+      setTelemetryProtocol(next);
+    } catch {
+      setProtocol(prev);   // revert on error
+      Alert.alert('Error', 'Failed to update telemetry protocol. Check your connection.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const handleLogout = () => {
     Alert.alert(
@@ -67,6 +90,26 @@ export default function ConsoleProfileScreen() {
             <MenuRow icon="information-circle-outline" label="Version" value={APP_VERSION} />
             <View style={styles.divider} />
             <MenuRow icon="server-outline" label="Backend" value="wateros-backend.vercel.app" />
+          </GlassSurface>
+
+          {/* System Settings — super admin only */}
+          <Text style={styles.sectionLabel}>System Settings</Text>
+          <GlassSurface style={styles.card}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Telemetry Protocol</Text>
+                <Text style={styles.settingDesc}>
+                  {protocol === 'mqtt' ? 'MQTT — Real-time via broker' : 'HTTP — Polling every 30s'}
+                </Text>
+              </View>
+              <Switch
+                value={protocol === 'mqtt'}
+                onValueChange={handleProtocolToggle}
+                disabled={saving}
+                trackColor={{ false: colors.glassBorder, true: `${colors.aqua}55` }}
+                thumbColor={protocol === 'mqtt' ? colors.aqua : colors.textSecondary}
+              />
+            </View>
           </GlassSurface>
 
           <LiquidButton
@@ -139,5 +182,26 @@ const styles = StyleSheet.create({
   signOutBtn: {
     marginTop: spacing.sm,
     borderColor: `${colors.danger}55`,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  settingText: {
+    flex: 1,
+    gap: 2,
+  },
+  settingLabel: {
+    fontFamily: typography.fontFamily.bodyMedium,
+    fontSize: typography.size.sm,
+    color: colors.textPrimary,
+  },
+  settingDesc: {
+    fontFamily: typography.fontFamily.body,
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
   },
 });

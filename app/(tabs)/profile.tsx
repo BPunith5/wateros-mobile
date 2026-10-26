@@ -113,9 +113,9 @@ export default function ProfileScreen() {
           {/* Account */}
           <Text style={s.sectionLabel}>Account</Text>
           <GlassSurface style={s.menuCard}>
-            <MenuRow icon="person-outline" label="Edit Profile" onPress={() => {}} />
+            <MenuRow icon="person-outline" label="Edit Profile" onPress={() => Alert.alert('Coming Soon', 'Profile editing will be available in the next update.')} />
             <View style={s.divider} />
-            <MenuRow icon="shield-checkmark-outline" label="Security & Privacy" onPress={() => {}} />
+            <MenuRow icon="shield-checkmark-outline" label="Security & Privacy" onPress={() => Alert.alert('Coming Soon', 'Security settings will be available in the next update.')} />
             <View style={s.divider} />
             <MenuRow icon="settings-outline" label="App Settings" onPress={() => router.push('/settings' as any)} />
           </GlassSurface>
@@ -123,7 +123,7 @@ export default function ProfileScreen() {
           {/* Support */}
           <Text style={s.sectionLabel}>Support</Text>
           <GlassSurface style={s.menuCard}>
-            <MenuRow icon="help-circle-outline" label="Help Center" onPress={() => {}} />
+            <MenuRow icon="help-circle-outline" label="Help Center" onPress={() => Alert.alert('Help', 'For support, contact us at support@aquanigha.com')} />
             <View style={s.divider} />
             <MenuRow icon="information-circle-outline" label="About Aqua Nigha" value="v1.0.0" onPress={() => {}} />
           </GlassSurface>

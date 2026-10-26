@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Platform, RefreshControl, ScrollView,
-  Modal, TextInput, Pressable, Alert, ActivityIndicator, KeyboardAvoidingView,
+  Modal, TextInput, Pressable, Alert, ActivityIndicator, KeyboardAvoidingView, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import Reveal from '@/src/components/glass/Reveal';
 import AlertCard from '@/src/components/alerts/AlertCard';
 import LiquidButton from '@/src/components/glass/LiquidButton';
 import { alertsApi, complaintsApi, tanksApi, AlertRecord, AlertSeverity, TankRecord, ComplaintRecord } from '@/src/lib/api';
+import { getCached, setCached } from '@/src/lib/cache';
 import { colors, radius, spacing, typography } from '@/src/theme/tokens';
 
 type Filter = 'all' | AlertSeverity;
@@ -35,6 +36,7 @@ export default function AlertsScreen() {
   const [tanks, setTanks] = useState<TankRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
 
   // complaint modal state
@@ -45,16 +47,23 @@ export default function AlertsScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
+    const cached = getCached<{ alerts: AlertRecord[]; complaints: ComplaintRecord[]; tanks: TankRecord[] }>('alerts');
+    if (cached) { setAlerts(cached.alerts); setMyComplaints(cached.complaints); setTanks(cached.tanks); setLoading(false); }
+
     try {
+      setLoadError(false);
       const [data, complaints, tankList] = await Promise.all([
         alertsApi.list(),
         complaintsApi.mySubmissions(),
         tanksApi.list(),
       ]);
+      setCached('alerts', { alerts: data, complaints, tanks: tankList });
       setAlerts(data);
       setMyComplaints(complaints);
       setTanks(tankList);
-    } catch { /* silent */ }
+    } catch {
+      setLoadError(true);
+    }
     finally {
       setLoading(false);
       setRefreshing(false);
@@ -193,14 +202,30 @@ export default function AlertsScreen() {
             </View>
           )}
 
+          {/* Error state */}
+          {!loading && loadError && (
+            <Reveal index={0}>
+              <GlassSurface style={s.emptyCard}>
+                <View style={[s.emptyIcon, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}55` }]}>
+                  <Ionicons name="cloud-offline-outline" size={28} color={colors.danger} />
+                </View>
+                <Text style={s.emptyTitle}>Couldn't load alerts</Text>
+                <Text style={s.emptySubtitle}>Check your connection and try again.</Text>
+                <TouchableOpacity style={s.retryBtn} onPress={load}>
+                  <Text style={s.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </GlassSurface>
+            </Reveal>
+          )}
+
           {/* Empty state */}
-          {!loading && filtered.length === 0 && myComplaints.length === 0 && (
+          {!loading && !loadError && filtered.length === 0 && myComplaints.length === 0 && (
             <Reveal index={0}>
               <GlassSurface style={s.emptyCard}>
                 <View style={s.emptyIcon}>
                   <Ionicons name="checkmark-done" size={28} color={colors.success} />
                 </View>
-                <Text style={s.emptyTitle}>Nothing here</Text>
+                <Text style={s.emptyTitle}>All clear</Text>
                 <Text style={s.emptySubtitle}>No alerts right now. Use "Report Issue" if something is wrong.</Text>
               </GlassSurface>
             </Reveal>
@@ -325,10 +350,12 @@ const s = StyleSheet.create({
   },
   emptyTitle: { fontFamily: typography.fontFamily.headingMedium, fontSize: typography.size.md, color: colors.textPrimary },
   emptySubtitle: { fontFamily: typography.fontFamily.body, fontSize: typography.size.sm, color: colors.textSecondary, textAlign: 'center' },
+  retryBtn: { marginTop: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: 12, backgroundColor: `${colors.aqua}22`, borderWidth: 1, borderColor: `${colors.aqua}55` },
+  retryBtnText: { fontFamily: typography.fontFamily.bodyMedium, fontSize: typography.size.sm, color: colors.aqua },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: 'rgba(5,18,40,0.98)', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    backgroundColor: '#080f1e', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
     borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
     paddingTop: spacing.lg, paddingHorizontal: spacing.lg, paddingBottom: Platform.OS === 'ios' ? 40 : 24, gap: spacing.md,
   },

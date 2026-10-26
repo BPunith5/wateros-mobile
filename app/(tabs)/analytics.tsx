@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Platform, ScrollView, RefreshControl,
+  View, Text, StyleSheet, Platform, ScrollView, RefreshControl, TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +41,7 @@ export default function AnalyticsScreen() {
   const [distribution, setDistribution] = useState<AnalyticsDistribution[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     tanksApi.list().then(setTanks).catch(() => {});
@@ -48,11 +49,14 @@ export default function AnalyticsScreen() {
 
   const load = useCallback(async () => {
     try {
+      setLoadError(false);
       const data = await analyticsApi.get(range);
       setSeries(data.series ?? []);
       setSummary(data.summary ?? null);
       setDistribution(data.distribution ?? []);
-    } catch { /* silent */ }
+    } catch {
+      setLoadError(true);
+    }
     finally {
       setLoading(false);
       setRefreshing(false);
@@ -129,7 +133,16 @@ export default function AnalyticsScreen() {
             </View>
           )}
 
-          {series.length === 0 && !loading ? (
+          {!loading && loadError ? (
+            <GlassSurface style={s.emptyCard}>
+              <Ionicons name="cloud-offline-outline" size={36} color={colors.danger} />
+              <Text style={s.emptyTitle}>Couldn't load analytics</Text>
+              <Text style={s.emptySub}>Check your connection and try again.</Text>
+              <TouchableOpacity style={s.retryBtn} onPress={load}>
+                <Text style={s.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </GlassSurface>
+          ) : series.length === 0 && !loading ? (
             <GlassSurface style={s.emptyCard}>
               <Ionicons name="analytics-outline" size={36} color={colors.textTertiary} />
               <Text style={s.emptyTitle}>No data for this period</Text>
@@ -361,4 +374,6 @@ const s = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
   },
+  retryBtn: { marginTop: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: 12, backgroundColor: `${colors.aqua}22`, borderWidth: 1, borderColor: `${colors.aqua}55` },
+  retryBtnText: { fontFamily: typography.fontFamily.bodyMedium, fontSize: typography.size.sm, color: colors.aqua },
 });
